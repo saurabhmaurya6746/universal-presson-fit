@@ -26,9 +26,13 @@ class EmailService:
     def send_verification_email(self, email: str, raw_token: str) -> Optional[str]:
         if settings.is_production:
             if not self.is_production_provider_configured:
-                raise RuntimeError(
-                    "Production email delivery provider is not configured. Email verification blocked."
-                )
+                if settings.REQUIRE_EMAIL_VERIFICATION:
+                    from fastapi import HTTPException, status
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Production email delivery provider is not configured. Email verification blocked.",
+                    )
+                return None
             # Future Phase: Call approved production provider API
             return None
 
@@ -42,8 +46,10 @@ class EmailService:
     def send_password_reset_email(self, email: str, raw_token: str) -> Optional[str]:
         if settings.is_production:
             if not self.is_production_provider_configured:
-                raise RuntimeError(
-                    "Production email delivery provider is not configured. Password reset delivery blocked."
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Production email delivery provider is not configured. Password reset delivery blocked.",
                 )
             # Future Phase: Call approved production provider API
             return None

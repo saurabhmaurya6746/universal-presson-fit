@@ -53,8 +53,8 @@ export function RegisterPage() {
       return;
     }
 
-    if (!personalPassword || personalPassword.length < 4) {
-      setErrorMessage("Please enter a password with at least 4 characters.");
+    if (!personalPassword || personalPassword.length < 8) {
+      setErrorMessage("Please enter a password with at least 8 characters.");
       return;
     }
 
@@ -80,13 +80,14 @@ export function RegisterPage() {
       setIsSubmitting(false);
 
       if (res.success) {
-        if (res.redirectTo === "/login") {
-          // Email confirmation is required by account configuration
+        if (res.verificationRequired) {
           setSuccessNotice(
-            "Account created! Please check your email inbox to confirm your address before signing in."
+            res.message || "Account created! Please check your email inbox to confirm your address before signing in."
           );
-        } else if (res.redirectTo) {
-          navigate(res.redirectTo);
+        } else {
+          setSuccessNotice(
+            res.message || "Account created successfully! You can now sign in below."
+          );
         }
       } else {
         setErrorMessage(res.error || "Failed to create personal account.");
@@ -112,8 +113,8 @@ export function RegisterPage() {
       return;
     }
 
-    if (!brandPassword || brandPassword.length < 4) {
-      setErrorMessage("Please enter a password with at least 4 characters.");
+    if (!brandPassword || brandPassword.length < 8) {
+      setErrorMessage("Please enter a password with at least 8 characters.");
       return;
     }
 
@@ -359,7 +360,7 @@ export function RegisterPage() {
                     htmlFor="reg-personal-terms"
                     className="text-xs text-muted-foreground leading-snug cursor-pointer select-none"
                   >
-                    I agree to the Terms of Service & Privacy Policy for demo preview access.
+                    I agree to the Terms of Service & Privacy Policy.
                   </label>
                 </div>
 
@@ -368,7 +369,7 @@ export function RegisterPage() {
                   disabled={isSubmitting}
                   className="w-full justify-center py-2.5 text-sm font-semibold mt-2"
                 >
-                  {isSubmitting ? "Creating Demo Profile..." : "Create Personal Account"}
+                  {isSubmitting ? "Creating Account..." : "Create Personal Account"}
                 </Button>
               </form>
             )}
@@ -567,7 +568,7 @@ export function RegisterPage() {
                     htmlFor="reg-brand-terms"
                     className="text-xs text-muted-foreground leading-snug cursor-pointer select-none"
                   >
-                    I agree to the Studio Partner Terms and understand that trial and chart management operate in browser demo state.
+                    I agree to the Studio Partner Terms and Privacy Policy.
                   </label>
                 </div>
 

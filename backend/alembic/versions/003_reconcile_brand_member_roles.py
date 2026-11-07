@@ -6,7 +6,7 @@ Create Date: 2026-11-04 17:25:00.000000
 
 """
 from typing import Sequence, Union
-from alembic import op
+from alembic import op, context
 import sqlalchemy as sa
 
 
@@ -19,18 +19,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # 1. Fail closed if any unresolved legacy 'member' rows exist
-    bind = op.get_bind()
-    unresolved_count = bind.execute(
-        sa.text("SELECT COUNT(*) FROM brand_members WHERE role = 'member'")
-    ).scalar()
+    if not context.is_offline_mode():
+        bind = op.get_bind()
+        unresolved_count = bind.execute(
+            sa.text("SELECT COUNT(*) FROM brand_members WHERE role = 'member'")
+        ).scalar()
 
-    if unresolved_count and unresolved_count > 0:
-        raise RuntimeError(
-            f"Cannot apply migration 003_reconcile_brand_member_roles: "
-            f"Found {unresolved_count} brand_members row(s) with unresolved legacy role 'member'. "
-            "Automatic role assignment is prohibited. Each row requires explicit, reviewed role resolution "
-            "to either 'owner' or 'manager' before this migration can proceed."
-        )
+        if unresolved_count and unresolved_count > 0:
+            raise RuntimeError(
+                f"Cannot apply migration 003_reconcile_brand_member_roles: "
+                f"Found {unresolved_count} brand_members row(s) with unresolved legacy role 'member'. "
+                "Automatic role assignment is prohibited. Each row requires explicit, reviewed role resolution "
+                "to either 'owner' or 'manager' before this migration can proceed."
+            )
 
     # 2. Drop historical Phase 1 check constraint permitting 'member'
     op.drop_constraint("ck_brand_members_role", "brand_members", type_="check")

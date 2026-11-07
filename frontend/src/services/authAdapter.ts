@@ -46,14 +46,52 @@ export interface AuthAdapter {
  */
 export function formatAuthError(error: unknown): string {
   if (!error) return "An unexpected authentication error occurred.";
-  const raw =
-    error instanceof Error
-      ? error.message
-      : typeof error === "object" && error !== null && "detail" in error
-      ? String((error as { detail: unknown }).detail)
-      : typeof error === "object" && error !== null && "message" in error
-      ? String((error as { message: unknown }).message)
-      : String(error);
+
+  let raw = "";
+
+  if (typeof error === "string") {
+    raw = error;
+  } else if (error instanceof Error) {
+    raw = error.message;
+  } else if (Array.isArray(error)) {
+    // Pydantic validation error list, e.g. [{ loc: [...], msg: "String should have at least 8 characters" }]
+    const messages = error
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (typeof item === "object" && item !== null) {
+          if ("msg" in item && typeof item.msg === "string") {
+            const field = Array.isArray((item as { loc?: unknown[] }).loc)
+              ? (item as { loc: unknown[] }).loc.filter((l) => l !== "body").join(" ")
+              : "";
+            return field ? `${field}: ${item.msg}` : item.msg;
+          }
+          if ("message" in item && typeof item.message === "string") return item.message;
+        }
+        return JSON.stringify(item);
+      })
+      .filter(Boolean);
+    raw = messages.join(". ") || "Validation error occurred.";
+  } else if (typeof error === "object" && error !== null) {
+    if ("detail" in error) {
+      return formatAuthError((error as { detail: unknown }).detail);
+    }
+    if ("message" in error && typeof (error as { message: unknown }).message === "string") {
+      raw = (error as { message: string }).message;
+    } else {
+      try {
+        raw = JSON.stringify(error);
+      } catch {
+        raw = "An unexpected error occurred.";
+      }
+    }
+  } else {
+    raw = String(error);
+  }
+
+  // Fallback if raw resolved to [object Object] or empty string
+  if (!raw || raw === "[object Object]") {
+    raw = "An unexpected error occurred. Please verify your details and try again.";
+  }
 
   const lower = raw.toLowerCase();
   if (lower.includes("invalid login credentials") || lower.includes("invalid_credentials") || lower.includes("invalid email or password")) {
@@ -65,8 +103,8 @@ export function formatAuthError(error: unknown): string {
   if (lower.includes("already registered") || lower.includes("user_already_exists") || lower.includes("already exists") || lower.includes("conflict")) {
     return "An account with this email address already exists. Please sign in instead.";
   }
-  if (lower.includes("at least 8") || lower.includes("at least 6") || lower.includes("weak_password") || lower.includes("too short")) {
-    return "Password is too weak. Please use at least 8 characters.";
+  if (lower.includes("at least 8") || lower.includes("at least 6") || lower.includes("weak_password") || lower.includes("too short") || lower.includes("string_too_short")) {
+    return "Password is too short. Please use at least 8 characters.";
   }
   if (lower.includes("rate limit") || lower.includes("too many requests")) {
     return "Too many requests. Please wait a moment before trying again.";
@@ -381,6 +419,8 @@ export class FastApiAuthAdapter implements AuthAdapter {
         success: true,
         user,
         redirectTo: "/login",
+        verificationRequired: body.verification_required ?? false,
+        message: body.message,
       };
     } catch (err) {
       return { success: false, error: formatAuthError(err) };

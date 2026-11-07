@@ -120,6 +120,8 @@ export interface LoginResult {
   user?: AuthUser;
   error?: string;
   redirectTo?: string;
+  verificationRequired?: boolean;
+  message?: string;
 }
 
 export function loginUser(email: string, password?: string): LoginResult {

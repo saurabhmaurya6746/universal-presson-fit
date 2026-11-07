@@ -97,8 +97,12 @@ def register(
     profile = AuthService.resolve_user_profile(db, user)
     return UserRegisterResponse(
         user=profile,
-        verification_required=True,
-        message="Registration successful. Please verify your email.",
+        verification_required=settings.REQUIRE_EMAIL_VERIFICATION,
+        message=(
+            "Registration successful. Please verify your email."
+            if settings.REQUIRE_EMAIL_VERIFICATION
+            else "Registration successful."
+        ),
         dev_verification_token=dev_token,
     )
 
