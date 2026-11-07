@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import {
   Eye,
   EyeOff,
@@ -14,17 +14,52 @@ import { authAdapter } from "@/services/authAdapter";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
 
-  const [email, setEmail] = useState("");
+  const stateEmail = (location.state as { email?: string } | null)?.email;
+  const stateNotice = (location.state as { notice?: string } | null)?.notice;
+  const queryEmail = searchParams.get("email") || "";
+  const queryNotice = searchParams.get("notice") || "";
+
+  const [email, setEmail] = useState(stateEmail || queryEmail || "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [feedbackNotice, setFeedbackNotice] = useState("");
+  const [feedbackNotice, setFeedbackNotice] = useState(stateNotice || queryNotice || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync state if navigation occurs while mounted
+  useEffect(() => {
+    if (stateEmail && !email) {
+      setEmail(stateEmail);
+    }
+    if (stateNotice) {
+      setFeedbackNotice(stateNotice);
+    }
+  }, [stateEmail, stateNotice]);
+
+  // Handle incoming verification token if accessed via email link
+  useEffect(() => {
+    const token = searchParams.get("token") || searchParams.get("verification_token");
+    if (token && authAdapter.verifyEmail) {
+      setFeedbackNotice("Verifying your email address...");
+      authAdapter.verifyEmail(token).then((res) => {
+        if (res.success) {
+          setErrorMessage("");
+          setFeedbackNotice(res.message || "Email verified successfully! You can now sign in.");
+        } else {
+          setErrorMessage(res.error || "Invalid or expired verification token.");
+        }
+      });
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     setErrorMessage("");
     setFeedbackNotice("");
 

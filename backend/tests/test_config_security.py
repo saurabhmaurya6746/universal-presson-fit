@@ -445,3 +445,35 @@ def test_fastapi_cors_middleware_uses_environment_aware_origins(monkeypatch):
     cors_dev = s_dev.get_cors_origins()
     assert "http://localhost:3000" in cors_dev
     assert "http://localhost:5173" in cors_dev
+
+
+def test_production_email_service_behavior_with_and_without_verification(monkeypatch):
+    """Verify EmailService behavior under production: optional verification succeeds safely, mandatory verification fails closed with 503."""
+    from fastapi import HTTPException
+    from app.auth.email import EmailService
+    from app.config import settings
+
+    svc = EmailService()
+
+    # 1. Non-production captures tokens safely
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    dev_token = svc.send_verification_email("user@example.com", "token_123")
+    assert dev_token == "token_123"
+    assert svc.get_latest_dev_token("user@example.com", "email_verification") == "token_123"
+
+    # 2. Production with REQUIRE_EMAIL_VERIFICATION=False: returns None without crashing
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "REQUIRE_EMAIL_VERIFICATION", False)
+    assert svc.send_verification_email("user@example.com", "token_123") is None
+
+    # 3. Production with REQUIRE_EMAIL_VERIFICATION=True: fails closed with 503
+    monkeypatch.setattr(settings, "REQUIRE_EMAIL_VERIFICATION", True)
+    with pytest.raises(HTTPException) as exc_info:
+        svc.send_verification_email("user@example.com", "token_123")
+    assert exc_info.value.status_code == 503
+    assert "Production email delivery provider is not configured" in exc_info.value.detail
+
+    # 4. Production password reset fails closed with 503
+    with pytest.raises(HTTPException) as exc_info:
+        svc.send_password_reset_email("user@example.com", "token_123")
+    assert exc_info.value.status_code == 503

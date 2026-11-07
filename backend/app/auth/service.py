@@ -100,10 +100,16 @@ class AuthService:
             is_consumed=False,
         )
         db.add(token_record)
-        db.commit()
 
-        # Send/capture token
-        dev_token = email_service.send_verification_email(user.email, raw_token)
+        try:
+            # Send/capture token - if email delivery fails, roll back completely
+            # to prevent inconsistent or dangling unverified user records
+            dev_token = email_service.send_verification_email(user.email, raw_token)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
         return user, dev_token
 
     @classmethod

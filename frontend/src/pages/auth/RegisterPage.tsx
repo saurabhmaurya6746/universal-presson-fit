@@ -45,6 +45,8 @@ export function RegisterPage() {
 
   const handlePersonalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     setErrorMessage("");
     setSuccessNotice("");
 
@@ -77,29 +79,49 @@ export function RegisterPage() {
         },
         personalPassword
       );
-      setIsSubmitting(false);
 
       if (res.success) {
+        const registeredEmail = personalEmail.trim().toLowerCase();
         if (res.verificationRequired) {
-          setSuccessNotice(
-            res.message || "Account created! Please check your email inbox to confirm your address before signing in."
-          );
+          const msg =
+            res.message ||
+            "Account created! Please check your email inbox to verify your address before signing in.";
+          setSuccessNotice(msg);
+          setTimeout(() => {
+            navigate("/login", {
+              state: {
+                email: registeredEmail,
+                notice: "Please verify your email address, then enter your password to sign in.",
+              },
+            });
+          }, 2000);
         } else {
           setSuccessNotice(
-            res.message || "Account created successfully! You can now sign in below."
+            res.message || "Account created successfully! Redirecting to Sign In..."
           );
+          setTimeout(() => {
+            navigate("/login", {
+              state: {
+                email: registeredEmail,
+                notice: "Account created successfully! Please enter your password to sign in.",
+              },
+            });
+          }, 1200);
         }
       } else {
+        setIsSubmitting(false);
         setErrorMessage(res.error || "Failed to create personal account.");
       }
     } catch {
       setIsSubmitting(false);
-      setErrorMessage("An unexpected registration error occurred.");
+      setErrorMessage("An unexpected registration error occurred. Please try again.");
     }
   };
 
   const handleBrandSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     setErrorMessage("");
     setSuccessNotice("");
 
@@ -141,22 +163,31 @@ export function RegisterPage() {
         },
         brandPassword
       );
-      setIsSubmitting(false);
 
       if (res.success) {
         if (res.redirectTo === "/login") {
-          setSuccessNotice(
-            "Studio partner application received! Once verified by our team, your studio account and sizing chart will be activated."
-          );
+          const registeredEmail = businessEmail.trim().toLowerCase();
+          const msg =
+            "Studio partner application received! Once verified, your studio account will be activated. Redirecting to Sign In...";
+          setSuccessNotice(msg);
+          setTimeout(() => {
+            navigate("/login", {
+              state: {
+                email: registeredEmail,
+                notice: "Studio application received! Please sign in with your credentials.",
+              },
+            });
+          }, 2000);
         } else if (res.redirectTo) {
           navigate(res.redirectTo);
         }
       } else {
+        setIsSubmitting(false);
         setErrorMessage(res.error || "Failed to create brand studio account.");
       }
     } catch {
       setIsSubmitting(false);
-      setErrorMessage("An unexpected registration error occurred.");
+      setErrorMessage("An unexpected registration error occurred. Please try again.");
     }
   };
 
