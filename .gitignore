@@ -1,0 +1,50 @@
+# Frontend and generated build output
+node_modules/
+dist/
+dist-ssr/
+frontend/node_modules/
+frontend/dist/
+
+# Python virtual environments, bytecode and test caches
+.venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files and secrets (Never upload any .env files)
+.env*
+*.env*
+frontend/.env*
+backend/.env*
+
+# Documentation, reports, prompts, plans, and markdown files
+docs/
+scratch/
+README.md
+**/README.md
+AGENTS.md
+*.md
+
+# Standalone local demos and scratch scripts
+frontend/demos/
+frontend/test_browser_inference.mjs
+
+# Logs and local tooling
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.wrangler/
+.dev.vars
+.DS_Store
+.idea/
+.vscode/*
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
