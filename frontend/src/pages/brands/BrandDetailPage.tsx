@@ -83,8 +83,8 @@ export function BrandDetailPage() {
   return (
     <>
       <SEO
-        title={`${brand.name} | Sizing Chart | PressOn Fit`}
-        description={`View ${brand.name} press-on sizing specifications and millimeter finger width recommendations on PressOn Fit.`}
+        title={`${brand.name} | Sizing Chart | Nail World`}
+        description={`View ${brand.name} press-on sizing specifications and millimeter finger width recommendations on Nail World.`}
       />
 
       <div className="section-shell pt-8">
@@ -111,7 +111,7 @@ export function BrandDetailPage() {
             <span className="inline-flex size-2 rounded-full bg-amber-500 animate-pulse" />
             <span>
               {isRemote ? (
-                <strong>Live PressOn Fit View:</strong>
+                <strong>Live Nail World View:</strong>
               ) : (
                 <strong>Sample Brand Chart (Demo):</strong>
               )}{" "}

@@ -8,7 +8,7 @@ import { SEO } from "@/components/common/SEO";
 import { services } from "@/data/services";
 import { gallery } from "@/data/gallery";
 import { siteConfig } from "@/data/siteConfig";
-import logo from "@/assets/logo/aura-nails-logo.png";
+import logo from "@/assets/logo/nail-world-badge.svg";
 import heroNails from "@/assets/images/hero-nails.jpg";
 import mintNails from "@/assets/images/nails-mint.jpg";
 import blushNails from "@/assets/images/nails-blush.jpg";
@@ -36,8 +36,8 @@ export function Home() {
           <div className="relative z-10 reveal">
             <img
               src={logo}
-              alt="Aura Nails by Khushi"
-              className="mb-7 size-28 rounded-full object-cover shadow-luxe sm:size-36"
+              alt="Nail World Luxury Atelier"
+              className="mb-7 size-28 rounded-full object-contain shadow-luxe sm:size-36 transition-transform hover:scale-105"
             />
             <p className="text-xs font-bold uppercase tracking-[.22em] text-lavender-deep">
               Luxury nail atelier

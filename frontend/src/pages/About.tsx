@@ -90,6 +90,21 @@ export function About() {
         </div>
       </section>
 
+      {/* Technology Platform & TechHelp Solutions Attribution */}
+      <section className="py-20 border-t border-border bg-card/50">
+        <div className="section-shell max-w-4xl text-center space-y-4">
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Platform Innovation
+          </span>
+          <h2 className="font-display text-3xl sm:text-4xl font-bold text-foreground">
+            Powered by Nail World & TechHelp Solutions
+          </h2>
+          <p className="text-sm sm:text-base text-muted-foreground leading-relaxed max-w-2xl mx-auto">
+            Universal press-on sizing on this platform is powered by Nail World, a product developed and owned by TechHelp Solutions. Our proprietary computer vision millimeter estimation ensures every custom press-on fits with salon perfection.
+          </p>
+        </div>
+      </section>
+
       <FinalCta />
     </>
   );

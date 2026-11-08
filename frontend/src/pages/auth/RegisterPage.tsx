@@ -194,8 +194,8 @@ export function RegisterPage() {
   return (
     <>
       <SEO
-        title="Create an Account | PressOn Fit"
-        description="Register for a Personal Nail Account or Brand Studio Partner Account with a 10-day free trial on PressOn Fit."
+        title="Create an Account | Nail World"
+        description="Register for a Personal Nail Account or Brand Studio Partner Account with a 10-day free trial on Nail World."
       />
 
       <div className="relative min-h-[calc(100vh-4.5rem)] py-12 px-4 sm:px-6 flex flex-col justify-center items-center overflow-hidden">
@@ -215,7 +215,7 @@ export function RegisterPage() {
               Create Your Account
             </h1>
             <p className="mt-1.5 text-xs sm:text-sm text-muted-foreground">
-              Choose the account type that matches how you use PressOn Fit.
+              Choose the account type that matches how you use Nail World.
             </p>
           </div>
 

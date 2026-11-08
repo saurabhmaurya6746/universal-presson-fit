@@ -49,7 +49,7 @@ export function App() {
           <Route path="/contact" element={<Contact />} />
           <Route path="/booking" element={<Booking />} />
 
-          {/* PressOn Fit Sizing & Brand Routes */}
+          {/* Nail World Universal Sizing & Brand Routes */}
           <Route path="/ai-nail-size-finder" element={<AISizeFinder />} />
           <Route path="/ai-size-finder" element={<Navigate to="/ai-nail-size-finder" replace />} />
           <Route path="/how-sizing-works" element={<HowSizingWorks />} />

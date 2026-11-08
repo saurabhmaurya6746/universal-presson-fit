@@ -31,7 +31,7 @@ const FAQS: FaqItem[] = [
   },
   {
     q: "Why are prices marked as 'To be announced'?",
-    a: "PressOn Fit is currently in demo prototype phase. Payment gateways and cloud billing are not yet connected, so all trial and plan selection states are simulated locally in browser storage.",
+    a: "Nail World partner plans include a 10-day free trial. Payment gateway integrations will activate upon official billing rollout.",
   },
   {
     q: "Can a brand switch between Starter and Studio plans?",
@@ -45,7 +45,7 @@ export function PricingPage() {
   return (
     <>
       <SEO
-        title="Pricing & Plans | PressOn Fit"
+        title="Pricing & Plans | Nail World"
         description="Simple, transparent plans for customers and press-on nail studios. Free AI sizing for shoppers and 10-day free trial for brands."
       />
 
@@ -103,7 +103,7 @@ export function PricingPage() {
             Two Simple Studio Plans
           </h2>
           <p className="text-sm text-muted-foreground">
-            Host your sizing chart on PressOn Fit and let customers match their millimeter measurements directly to your sets.
+            Host your sizing chart on Nail World and let customers match their millimeter measurements directly to your sets.
           </p>
         </div>
 
@@ -144,7 +144,7 @@ export function PricingPage() {
                   </li>
                   <li className="flex items-start gap-2.5">
                     <Check className="size-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span><strong>Verified Studio Profile</strong> in PressOn Fit Brand Directory</span>
+                    <span><strong>Verified Studio Profile</strong> in Nail World Brand Directory</span>
                   </li>
                   <li className="flex items-start gap-2.5">
                     <Check className="size-4 text-emerald-600 shrink-0 mt-0.5" />

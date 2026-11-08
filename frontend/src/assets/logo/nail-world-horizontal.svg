@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 90" width="100%" height="100%">
+  <defs>
+    <linearGradient id="hzRoseGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F7D6CD" />
+      <stop offset="35%" stop-color="#E2A69A" />
+      <stop offset="70%" stop-color="#C57B6E" />
+      <stop offset="100%" stop-color="#8E4D43" />
+    </linearGradient>
+
+    <linearGradient id="hzChampagne" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF4D0" />
+      <stop offset="40%" stop-color="#E6C875" />
+      <stop offset="100%" stop-color="#A77A23" />
+    </linearGradient>
+
+    <filter id="hzShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#5C362C" flood-opacity="0.15" />
+    </filter>
+  </defs>
+
+  <!-- Left Icon Emblem (Compact Circle & Orbital Ring) -->
+  <g transform="translate(48, 45)" filter="url(#hzShadow)">
+    <!-- Base subtle circle -->
+    <circle cx="0" cy="0" r="38" fill="#FFF9F6" stroke="url(#hzRoseGold)" stroke-width="1.8" />
+    <circle cx="0" cy="0" r="34" fill="none" stroke="url(#hzChampagne)" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.8" />
+
+    <!-- Orbital Ring -->
+    <ellipse cx="0" cy="-2" rx="28" ry="9" fill="none" stroke="url(#hzChampagne)" stroke-width="1.5" transform="rotate(-25)" />
+    <circle cx="-23" cy="8" r="1.8" fill="url(#hzChampagne)" />
+    <circle cx="23" cy="-12" r="1.8" fill="url(#hzChampagne)" />
+
+    <!-- Almond Nail Motif -->
+    <!-- Center Nail Silhouette -->
+    <path d="M -4,-16 C -6,-6 -6,8 -4,16 C -3,20 3,20 4,16 C 6,8 6,-6 4,-16 C 3,-22 -3,-22 -4,-16 Z" fill="url(#hzRoseGold)" />
+    <!-- French tip highlight -->
+    <path d="M -3.5,-12 C -2,-15 2,-15 3.5,-12" fill="none" stroke="url(#hzChampagne)" stroke-width="1" />
+    <!-- Nail shine -->
+    <path d="M -1.8,-12 C -2.5,-4 -2.5,4 -1.8,10" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.8" />
+
+    <!-- Sparkles -->
+    <!-- Top Right Sparkle -->
+    <g transform="translate(16, -18) scale(0.35)">
+      <path d="M 0,-16 Q 0,0 16,0 Q 0,0 0,16 Q 0,0 -16,0 Q 0,0 0,-16 Z" fill="url(#hzChampagne)" />
+    </g>
+    <!-- Left Bottom Sparkle -->
+    <g transform="translate(-18, 14) scale(0.25)">
+      <path d="M 0,-16 Q 0,0 16,0 Q 0,0 0,16 Q 0,0 -16,0 Q 0,0 0,-16 Z" fill="url(#hzRoseGold)" />
+    </g>
+  </g>
+
+  <!-- Typography Right Side -->
+  <g transform="translate(108, 0)">
+    <!-- Brand Title -->
+    <text x="0" y="47" font-family="'Cormorant Garamond', 'Playfair Display', Georgia, serif" font-size="38" font-weight="700" letter-spacing="5" fill="#2C1814">
+      NAIL WORLD
+    </text>
+
+    <!-- Subtitle Line -->
+    <text x="3" y="68" font-family="'Manrope', -apple-system, sans-serif" font-size="10.5" font-weight="600" letter-spacing="3.8" fill="#7A564D">
+      LUXURY NAIL ATELIER &amp; FIT
+    </text>
+
+    <!-- Decorative Rose Gold Underline -->
+    <line x1="3" y1="76" x2="260" y2="76" stroke="url(#hzRoseGold)" stroke-width="1" opacity="0.6" />
+    <circle cx="265" cy="76" r="1.5" fill="url(#hzChampagne)" />
+  </g>
+</svg>

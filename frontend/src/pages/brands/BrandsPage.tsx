@@ -51,15 +51,15 @@ export function BrandsPage() {
   return (
     <>
       <SEO
-        title="Browse Sample Brands | PressOn Fit"
-        description="Browse sample press-on nail studio sizing charts and find your best fit using PressOn Fit's millimeter AI measurement."
+        title="Browse Sample Brands | Nail World"
+        description="Browse sample press-on nail studio sizing charts and find your best fit using Nail World's millimeter AI measurement."
       />
 
       <PageIntro
         eyebrow="Universal Sizing Directory"
         title="Sample Press-On Brand Charts"
       >
-        Explore how different press-on studios define their XS, S, M, L dimensions. Any press-on nail brand can host their sizing chart on PressOn Fit.
+        Explore how different press-on studios define their XS, S, M, L dimensions. Any press-on nail brand can host their sizing chart on Nail World.
       </PageIntro>
 
       {/* Demo / Backend Status Notice */}
@@ -69,7 +69,7 @@ export function BrandsPage() {
             <span className="inline-flex size-2 rounded-full bg-amber-500 animate-pulse" />
             <span>
               {isRemote ? (
-                <strong>Live PressOn Fit Catalog:</strong>
+                <strong>Live Nail World Catalog:</strong>
               ) : (
                 <strong>Sample / Demo Directory (UI Prototype):</strong>
               )}{" "}

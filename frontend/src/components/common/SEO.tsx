@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { brandConfig } from "@/config/branding";
 
 interface SEOProps {
   title: string;
@@ -7,7 +8,11 @@ interface SEOProps {
 
 export function SEO({ title, description }: SEOProps) {
   useEffect(() => {
-    const fullTitle = `${title} | Aura Nails by Khushi`;
+    const isStudioPage = title.toLowerCase().includes("aura nails") || title.toLowerCase().includes("studio");
+    const fullTitle =
+      title.includes(brandConfig.brandName) || isStudioPage
+        ? title
+        : `${title} | ${brandConfig.brandName}`;
     document.title = fullTitle;
 
     if (description) {

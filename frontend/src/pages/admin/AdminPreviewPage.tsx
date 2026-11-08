@@ -395,7 +395,7 @@ export function AdminPreviewPage() {
   return (
     <>
       <SEO
-        title="Platform Admin Workspace | PressOn Fit"
+        title="Platform Admin Workspace | Nail World"
         description="Comprehensive press-on nail brand management, trial monitoring, and chart review workspace."
       />
 

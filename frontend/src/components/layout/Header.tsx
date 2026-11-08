@@ -39,29 +39,22 @@ export function isLinkActive(linkTo: string, currentPath: string): boolean {
   return currentPath === linkTo || currentPath.startsWith(`${linkTo}/`);
 }
 
+import { NailWorldLogo } from "@/components/common/NailWorldLogo";
+
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <Link
       to="/"
-      aria-label="PressOn Fit Home"
-      className="group flex shrink-0 items-center gap-3 transition-opacity hover:opacity-90"
+      aria-label="Nail World Home"
+      className="group flex shrink-0 items-center gap-2.5 transition-opacity hover:opacity-95"
     >
-      <div
-        className={cn(
-          "flex items-center justify-center rounded-xl bg-card border border-border font-display font-bold text-foreground transition-colors group-hover:border-foreground/30",
-          compact ? "size-9 text-base" : "size-10 text-lg"
-        )}
-      >
-        PF
+      {/* On small mobile screens, show the crisp vector icon emblem; on tablet/desktop, show the full horizontal logo */}
+      <div className="block sm:hidden">
+        <NailWorldLogo variant="icon" height={38} width={38} className="rounded-full shadow-sm" />
       </div>
-      <span className="leading-tight block">
-        <b className="font-display text-lg sm:text-xl font-bold tracking-wide text-foreground block">
-          PRESSON FIT
-        </b>
-        <small className="block text-[9px] sm:text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
-          Universal Sizing
-        </small>
-      </span>
+      <div className="hidden sm:block">
+        <NailWorldLogo variant="horizontal" height={compact ? 38 : 44} />
+      </div>
     </Link>
   );
 }
@@ -141,7 +134,7 @@ export function Header() {
               <div>
                 <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
                 <SheetDescription className="sr-only">
-                  PressOn Fit platform menu
+                  Nail World platform menu
                 </SheetDescription>
                 <Brand />
 

@@ -75,8 +75,8 @@ export function BrandPortalLayout({
   return (
     <>
       <SEO
-        title={`${activeBrandName} | Brand Portal | PressOn Fit`}
-        description="PressOn Fit Partner Sizing and Brand Management Portal."
+        title={`${activeBrandName} | Brand Portal | Nail World`}
+        description="Nail World Partner Sizing and Brand Management Portal."
       />
 
       <div className="min-h-[calc(100vh-4.5rem)] bg-muted/20">

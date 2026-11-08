@@ -31,7 +31,7 @@ export function AdminSettingsPage() {
   return (
     <>
       <SEO
-        title="Platform Admin Settings | PressOn Fit"
+        title="Platform Admin Settings | Nail World"
         description="Configure admin workspace preferences, trial defaults, and local demo data."
       />
 

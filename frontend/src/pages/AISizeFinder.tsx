@@ -108,12 +108,12 @@ export function AISizeFinder() {
   return (
     <>
       <SEO
-        title="Find My Size | PressOn Fit Universal Sizing"
-        description="Universal AI-powered press-on nail sizing platform. Measure your natural fingernails in millimeters using a ₹10 reference coin and compare with any press-on brand."
+        title="Find My Size | Nail World Universal Sizing"
+        description="Nail World: Universal AI-powered press-on nail sizing platform by TechHelp Solutions. Perfect Fit. Every Time. Measure your natural fingernails in millimeters using a ₹10 reference coin and compare with any press-on brand."
       />
 
       <PageIntro
-        eyebrow="PressOn Fit Universal Sizing"
+        eyebrow="Nail World Universal Sizing"
         title="Find Your Perfect Press-On Nail Size"
       >
         Upload an overhead photo of your hand with a ₹10 coin. Get calibrated millimeter widths and find your exact size for any press-on nail brand. No login required.

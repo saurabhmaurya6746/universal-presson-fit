@@ -143,7 +143,7 @@ export function BrandDashboardPage() {
                 Create Your First Sizing Chart
               </h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                PressOn Fit needs your nail sizing chart to automatically recommend sizes to customers based on their 10-rupee optical coin scan. Choose between Format A (individual finger widths) or Format B (width ranges).
+                Nail World needs your nail sizing chart to automatically recommend sizes to customers based on their 10-rupee optical coin scan. Choose between Format A (individual finger widths) or Format B (width ranges).
               </p>
             </div>
             <Button asChild size="lg" className="gap-2 shrink-0 text-xs font-bold">

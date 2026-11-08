@@ -51,8 +51,8 @@ export function ResetPasswordPage() {
   return (
     <>
       <SEO
-        title="Reset Password | PressOn Fit"
-        description="Choose a new password for your PressOn Fit account."
+        title="Reset Password | Nail World"
+        description="Choose a new password for your Nail World account."
       />
 
       <div className="relative min-h-[calc(100vh-4.5rem)] py-12 px-4 sm:px-6 flex flex-col justify-center items-center overflow-hidden">

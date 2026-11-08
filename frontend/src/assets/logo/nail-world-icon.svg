@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <linearGradient id="icRoseGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F7D6CD" />
+      <stop offset="35%" stop-color="#E2A69A" />
+      <stop offset="70%" stop-color="#C57B6E" />
+      <stop offset="100%" stop-color="#8E4D43" />
+    </linearGradient>
+
+    <linearGradient id="icChampagne" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF4D0" />
+      <stop offset="35%" stop-color="#E6C875" />
+      <stop offset="100%" stop-color="#9C731E" />
+    </linearGradient>
+
+    <radialGradient id="icBg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFDFB" />
+      <stop offset="80%" stop-color="#FAF1ED" />
+      <stop offset="100%" stop-color="#F2E3DC" />
+    </radialGradient>
+  </defs>
+
+  <!-- Circular Base Badge -->
+  <circle cx="64" cy="64" r="60" fill="url(#icBg)" stroke="url(#icRoseGold)" stroke-width="2.5" />
+  <circle cx="64" cy="64" r="54" fill="none" stroke="url(#icChampagne)" stroke-width="1" stroke-dasharray="3 2" opacity="0.8" />
+
+  <!-- Orbital World Ring -->
+  <g transform="translate(64, 62)">
+    <ellipse cx="0" cy="0" rx="46" ry="15" fill="none" stroke="url(#icChampagne)" stroke-width="2" transform="rotate(-24)" />
+    <!-- Planet ring beads -->
+    <circle cx="-38" cy="14" r="2.5" fill="url(#icChampagne)" />
+    <circle cx="38" cy="-14" r="2.5" fill="url(#icChampagne)" />
+
+    <!-- Center Nail Silhouette -->
+    <path d="M -7,-25 C -10,-10 -11,10 -7,25 C -5,31 5,31 7,25 C 11,10 10,-10 7,-25 C 5,-33 -5,-33 -7,-25 Z" fill="url(#icRoseGold)" />
+    <!-- French tip accent -->
+    <path d="M -5.5,-18 C -3,-24 3,-24 5.5,-18" fill="none" stroke="url(#icChampagne)" stroke-width="1.8" />
+    <!-- Specular highlight -->
+    <path d="M -3,-20 C -4.5,-8 -4.5,8 -3,18" fill="none" stroke="#FFFFFF" stroke-width="1.2" opacity="0.85" />
+    <!-- Petite Finger Band -->
+    <ellipse cx="0" cy="22" rx="9" ry="3" fill="none" stroke="url(#icChampagne)" stroke-width="1.2" />
+    <circle cx="0" cy="19.5" r="1.5" fill="#FFFFFF" />
+
+    <!-- Luxe Star Accents -->
+    <g transform="translate(24, -26) scale(0.45)">
+      <path d="M 0,-20 Q 0,0 20,0 Q 0,0 0,20 Q 0,0 -20,0 Q 0,0 0,-20 Z" fill="url(#icChampagne)" />
+      <circle cx="0" cy="0" r="2.5" fill="#FFFFFF" />
+    </g>
+    <g transform="translate(-25, 24) scale(0.35)">
+      <path d="M 0,-20 Q 0,0 20,0 Q 0,0 0,20 Q 0,0 -20,0 Q 0,0 0,-20 Z" fill="url(#icRoseGold)" />
+    </g>
+  </g>
+</svg>

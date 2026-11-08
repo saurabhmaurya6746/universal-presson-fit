@@ -116,8 +116,8 @@ export function LoginPage() {
   return (
     <>
       <SEO
-        title="Sign In | PressOn Fit"
-        description="Sign in to your PressOn Fit account to access your saved nail size profiles or brand dashboard."
+        title="Sign In | Nail World"
+        description="Sign in to your Nail World account to access your saved nail size profiles or brand dashboard."
       />
 
       <div className="relative min-h-[calc(100vh-4.5rem)] py-12 px-4 sm:px-6 flex flex-col justify-center items-center overflow-hidden">
@@ -134,7 +134,7 @@ export function LoginPage() {
           {/* Header */}
           <div className="text-center mb-6">
             <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              Welcome to PressOn Fit
+              Welcome to Nail World
             </h1>
             <p className="mt-1.5 text-xs sm:text-sm text-muted-foreground">
               Sign in to your account.
@@ -277,7 +277,7 @@ export function LoginPage() {
           {/* Subtle footer note (dynamic between Demo and API Auth) */}
           <p className="mt-4 text-center text-[11px] text-muted-foreground/80">
             {authAdapter.isRemoteEnabled() ? (
-              <span>Protected by PressOn Fit API Authentication.</span>
+              <span>Protected by Nail World API Authentication.</span>
             ) : (
               <span>Preview access • Authentication is in local demonstration mode.</span>
             )}

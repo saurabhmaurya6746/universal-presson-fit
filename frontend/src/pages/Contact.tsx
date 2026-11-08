@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { PageIntro } from "@/components/ui/PageIntro";
 import { SEO } from "@/components/common/SEO";
 import { siteConfig } from "@/data/siteConfig";
+import { brandConfig } from "@/config/branding";
 
 const inputStyle =
   "mt-2 h-12 w-full border border-input bg-background px-4 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring/20";
@@ -71,6 +72,26 @@ export function Contact() {
                 <b className="block text-foreground">Email</b>
                 <small>{siteConfig.emailDisplay}</small>
               </span>
+            </div>
+          </div>
+
+          {/* Nail World Platform Support */}
+          <div className="mt-8 rounded-2xl border border-border bg-card p-5 space-y-2 text-xs">
+            <span className="font-semibold text-foreground block">
+              {brandConfig.brandName} Platform Inquiries
+            </span>
+            <p className="text-muted-foreground leading-relaxed">
+              For universal sizing, partner studio onboarding, or platform technical support:
+            </p>
+            <a
+              href={`mailto:${brandConfig.supportEmail}`}
+              className="font-medium text-foreground hover:underline inline-flex items-center gap-1.5 pt-1"
+            >
+              <Mail className="size-3.5" />
+              <span>{brandConfig.supportEmail}</span>
+            </a>
+            <div className="pt-2 text-[11px] text-muted-foreground/80">
+              {brandConfig.attribution}
             </div>
           </div>
         </div>

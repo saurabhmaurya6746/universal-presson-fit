@@ -53,8 +53,8 @@ export function PressOnFitHome() {
   return (
     <>
       <SEO
-        title="PressOn Fit | Universal Press-On Nail Sizing"
-        description="Estimate your natural fingernail widths in millimeters using a hand photo and a ₹10 reference coin. Compare measurements with any press-on nail brand."
+        title="Nail World | Universal Press-On Nail Sizing"
+        description="Nail World: Universal AI-powered press-on nail sizing platform by TechHelp Solutions. Perfect Fit. Every Time. Estimate your natural fingernail widths in millimeters using a ₹10 reference coin."
       />
 
       {/* 1. Hero Section */}
@@ -62,15 +62,15 @@ export function PressOnFitHome() {
         <div className="section-shell grid items-center gap-12 lg:grid-cols-2">
           <div className="max-w-xl">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4">
-              Press-on nail sizing
+              Nail World · Universal Sizing
             </p>
 
             <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-foreground leading-[1.1]">
-              Your Natural Nail Widths, Measured.
+              Perfect Fit. Every Time.
             </h1>
 
             <p className="mt-5 text-base sm:text-lg text-muted-foreground leading-relaxed">
-              Find your press-on nail size using a clear hand photo and a standard ₹10 reference coin. Estimate your natural nail widths in millimeters, then compare with any brand's sizing chart.
+              Find your press-on nail size using a clear hand photo and a standard ₹10 reference coin. Nail World estimates your natural nail widths in millimeters, then compares them with any brand's sizing chart.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -165,11 +165,11 @@ export function PressOnFitHome() {
         </div>
       </section>
 
-      {/* 3. Why PressOn Fit Section */}
+      {/* 3. Why Nail World Section */}
       <section className="section-shell py-16 md:py-20 border-b border-border">
         <div className="mb-12 max-w-xl">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Why PressOn Fit
+            Why Nail World
           </p>
           <h2 className="mt-2 font-display text-3xl sm:text-4xl font-bold text-foreground">
             Universal sizing for any press-on brand
@@ -288,12 +288,12 @@ export function PressOnFitHome() {
               Are you a press-on nail studio or seller?
             </h3>
             <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
-              Explore our demo portal for uploading your sizing chart. Note: data is currently saved locally in your browser; online account sync is in progress.
+              Explore our partner portal for uploading your custom sizing charts and matching customer millimeter profiles instantly.
             </p>
           </div>
 
           <Button asChild className="shrink-0 text-xs font-semibold">
-            <Link to="/brand/login">For Brands · Demo</Link>
+            <Link to="/brand/login">Brand Partner Portal</Link>
           </Button>
         </div>
       </section>

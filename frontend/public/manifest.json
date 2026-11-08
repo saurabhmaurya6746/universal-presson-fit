@@ -1,0 +1,21 @@
+{
+  "name": "Nail World - Universal Press-On Nail Sizing",
+  "short_name": "Nail World",
+  "description": "Nail World: Universal AI-powered press-on nail sizing platform by TechHelp Solutions. Perfect Fit. Every Time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#18181b",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

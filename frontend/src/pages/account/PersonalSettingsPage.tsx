@@ -40,7 +40,7 @@ export function PersonalSettingsPage() {
   return (
     <>
       <SEO
-        title="Personal Account Settings | PressOn Fit"
+        title="Personal Account Settings | Nail World"
         description="Manage your account preferences, measurement unit, and saved hand scans."
       />
 
@@ -144,7 +144,7 @@ export function PersonalSettingsPage() {
               </div>
 
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                All PressOn Fit partner sizing charts calibrate width specifications in precise millimeters calibrated via optical ₹10 coin scaling.
+                All Nail World partner sizing charts calibrate width specifications in precise millimeters calibrated via optical ₹10 coin scaling.
               </p>
             </div>
           </div>

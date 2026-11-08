@@ -237,7 +237,7 @@ export function BrandSettingsPage() {
               <div>
                 <span className="font-bold text-foreground block">Brand Public Profile</span>
                 <span className="text-[11px] text-muted-foreground">
-                  When public, approved brands are listed in the PressOn Fit Brand Directory.
+                  When public, approved brands are listed in the Nail World Brand Directory.
                 </span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">

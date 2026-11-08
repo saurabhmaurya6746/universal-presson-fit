@@ -249,8 +249,8 @@ export function PersonalDashboardPage() {
   return (
     <>
       <SEO
-        title="My Nail Account | PressOn Fit"
-        description="View your saved nail profiles and measurement history on PressOn Fit."
+        title="My Nail Account | Nail World"
+        description="View your saved nail profiles and measurement history on Nail World."
       />
 
       <PageIntro
@@ -270,7 +270,7 @@ export function PersonalDashboardPage() {
                 {user.isDemoSession ? (
                   <><strong>Demo Session Active:</strong> This profile is using the browser demo account.</>
                 ) : (
-                  <><strong>PressOn Fit API connected:</strong> You are signed in to the business backend with synchronized personal measurement profiles.</>
+                  <><strong>Nail World API connected:</strong> You are signed in to the business backend with synchronized personal measurement profiles.</>
                 )}
               </span>
             </div>

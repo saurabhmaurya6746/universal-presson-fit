@@ -28,8 +28,13 @@ const STORAGE_KEYS = {
 
 // Preset demo accounts (passwords are validated client-side for demo simulation only; no real security claimed)
 const PRESET_DEMO_ACCOUNTS: Record<string, Omit<AuthUser, "id" | "isDemoSession">> = {
+  "admin@nailworld.com": {
+    email: "admin@nailworld.com",
+    name: "Platform Administrator",
+    role: "admin",
+  },
   "admin@pressonfit.com": {
-    email: "admin@pressonfit.com",
+    email: "admin@nailworld.com",
     name: "Platform Administrator",
     role: "admin",
   },
@@ -54,15 +59,27 @@ const PRESET_DEMO_ACCOUNTS: Record<string, Omit<AuthUser, "id" | "isDemoSession"
     brandId: "brand-luxetip-atelier",
     brandName: "LuxeTip Atelier",
   },
-  "brand@pressonfit.com": {
-    email: "brand@pressonfit.com",
+  "brand@nailworld.com": {
+    email: "brand@nailworld.com",
     name: "Sample Brand Partner",
     role: "brand",
     brandId: "brand-aura-luxury",
     brandName: "Aura Luxury Press-Ons",
   },
+  "brand@pressonfit.com": {
+    email: "brand@nailworld.com",
+    name: "Sample Brand Partner",
+    role: "brand",
+    brandId: "brand-aura-luxury",
+    brandName: "Aura Luxury Press-Ons",
+  },
+  "user@nailworld.com": {
+    email: "user@nailworld.com",
+    name: "Pooja Verma",
+    role: "personal",
+  },
   "user@pressonfit.com": {
-    email: "user@pressonfit.com",
+    email: "user@nailworld.com",
     name: "Pooja Verma",
     role: "personal",
   },

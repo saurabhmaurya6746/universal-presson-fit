@@ -1,5 +1,8 @@
 import { Link } from "react-router-dom";
 import { siteConfig } from "@/data/siteConfig";
+import { brandConfig } from "@/config/branding";
+
+import { NailWorldLogo } from "@/components/common/NailWorldLogo";
 
 export function Footer() {
   return (
@@ -7,15 +10,34 @@ export function Footer() {
       <div className="section-shell grid gap-10 py-14 md:grid-cols-[1.5fr_1fr_1fr]">
         {/* Universal Platform Intro */}
         <div>
-          <span className="font-display text-xl font-bold tracking-wide">
-            PRESSON FIT
-          </span>
+          <div className="mb-3">
+            <NailWorldLogo variant="horizontal" height={38} />
+          </div>
           <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-            Universal Sizing Platform
+            {brandConfig.productDescriptor}
+          </p>
+          <p className="mt-1 text-xs italic text-foreground/80 font-medium">
+            "{brandConfig.tagline}"
           </p>
           <p className="mt-3 text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-sm">
-            Estimate natural fingernail widths in millimeters using a ₹10 reference coin. Compare with sizing charts from different press-on studios.
+            {brandConfig.summary}
           </p>
+
+          {/* TechHelp Solutions Attribution & Platform Support */}
+          <div className="mt-4 space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/40 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+              <span>{brandConfig.attribution}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Support:{" "}
+              <a
+                href={`mailto:${brandConfig.supportEmail}`}
+                className="text-foreground hover:underline font-medium"
+              >
+                {brandConfig.supportEmail}
+              </a>
+            </p>
+          </div>
         </div>
 
         {/* Universal Platform Links */}
@@ -40,7 +62,7 @@ export function Footer() {
               Nail Sizing
             </Link>
             <Link to="/brand/login" className="hover:text-foreground transition-colors">
-              For Brands · Demo
+              Brand Partner Portal
             </Link>
           </nav>
         </div>
@@ -83,8 +105,13 @@ export function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-border/60 py-4 text-center text-xs text-muted-foreground">
-        © 2026 PressOn Fit Platform. Sizing charts are specifications of respective studios and brands. Measurements are optical millimeter approximations.
+      <div className="border-t border-border/60 py-4 text-center text-xs text-muted-foreground space-y-1">
+        <p>
+          © 2026 {brandConfig.brandName}. Sizing charts are specifications of respective studios and brands. Measurements are optical millimeter approximations.
+        </p>
+        <p className="text-[11px] text-muted-foreground/80 font-medium">
+          {brandConfig.attribution}
+        </p>
       </div>
     </footer>
   );

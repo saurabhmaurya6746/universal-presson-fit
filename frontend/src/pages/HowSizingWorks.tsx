@@ -31,7 +31,7 @@ export function HowSizingWorks() {
       num: "03",
       icon: TableProperties,
       title: "Cross-Brand Sizing Chart Comparison",
-      desc: "Different press-on studios craft nails with varying size molds (e.g. Size 'M' is 14mm in one brand but 13mm in another). PressOn Fit takes your exact millimeter measurements and maps them to any brand's chart by choosing the closest size equal to or slightly wider than your natural nail.",
+      desc: "Different press-on studios craft nails with varying size molds (e.g. Size 'M' is 14mm in one brand but 13mm in another). Nail World takes your exact millimeter measurements and maps them to any brand's chart by choosing the closest size equal to or slightly wider than your natural nail.",
       highlight: "Universal fit across multiple brands",
     },
     {
@@ -46,13 +46,13 @@ export function HowSizingWorks() {
   return (
     <>
       <SEO
-        title="How Sizing Works | PressOn Fit Universal Sizing"
-        description="Learn how PressOn Fit uses optical ₹10 coin calibration and AI computer vision to estimate natural fingernail widths in millimeters for any press-on nail brand."
+        title="How Sizing Works | Nail World Universal Sizing"
+        description="Learn how Nail World uses optical ₹10 coin calibration and AI computer vision to estimate natural fingernail widths in millimeters for any press-on nail brand."
       />
 
       <PageIntro
         eyebrow="Measurement Science"
-        title="How PressOn Fit Sizing Works"
+        title="How Nail World Sizing Works"
       >
         Discover how computer vision and optical coin scale calibration translate a smartphone photo into precision millimeter nail widths for any press-on brand.
       </PageIntro>
@@ -153,7 +153,7 @@ export function HowSizingWorks() {
                   4. Independent & Universal
                 </p>
                 <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-                  PressOn Fit is not tied to any single press-on studio. Your millimeter results belong to you and can be compared with any artisan or retail brand.
+                  Nail World is not tied to any single press-on studio. Your millimeter results belong to you and can be compared with any artisan or retail brand.
                 </p>
               </div>
             </div>
