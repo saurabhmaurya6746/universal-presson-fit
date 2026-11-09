@@ -11,19 +11,64 @@ import type {
 
 export const MODEL_URL = "/models/best_50epoch.onnx";
 
-const CDN_WASM_PATH = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
 const LOCAL_WASM_PATH = "/onnx/";
 
-// Configure WASM paths
+// Configure WASM paths to purely local assets with explicit timeout
 try {
   if (typeof window !== "undefined") {
-    // Primary: jsdelivr CDN recommended for bundlers like Vite to avoid dev-server module transform issues
-    ort.env.wasm.wasmPaths = CDN_WASM_PATH;
+    // Primary: Same-origin local WASM assets served from /onnx/
+    ort.env.wasm.wasmPaths = LOCAL_WASM_PATH;
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.proxy = false;
+    ort.env.wasm.initTimeout = 45000; // 45s explicit timeout prevents indefinite hanging
   }
 } catch (e) {
   console.warn("[NailInference] Error configuring WASM environment:", e);
+}
+
+/**
+ * Fetch the ONNX model binary from local static assets with real byte stream progress.
+ */
+async function fetchModelWithProgress(
+  url: string,
+  onProgress?: (receivedBytes: number, totalBytes: number) => void
+): Promise<Uint8Array> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load AI model asset from ${url} (HTTP ${response.status} ${response.statusText})`
+    );
+  }
+
+  const contentLength = response.headers.get("content-length");
+  const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+  if (!response.body || total === 0) {
+    const arrayBuffer = await response.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      received += value.length;
+      onProgress?.(received, total);
+    }
+  }
+
+  const combined = new Uint8Array(received);
+  let position = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, position);
+    position += chunk.length;
+  }
+  return combined;
 }
 
 class NailInferenceEngine {
@@ -58,23 +103,27 @@ class NailInferenceEngine {
     this.modelLoadPromise = (async () => {
       const startTime = performance.now();
       try {
-        console.log(`[NailInference] Creating ONNX session from ${MODEL_URL}...`);
+        console.log(`[NailInference] Loading model buffer from ${MODEL_URL}...`);
+        onStatus?.("Loading neural vision network...");
 
-        // Primary attempt with CDN wasmPaths
-        try {
-          this.session = await ort.InferenceSession.create(MODEL_URL, {
-            executionProviders: ["wasm"],
-            graphOptimizationLevel: "all",
-          });
-        } catch (primaryErr) {
-          console.warn("[NailInference] Primary WASM path load failed, trying local fallback...", primaryErr);
-          // Fallback to local WASM assets
-          ort.env.wasm.wasmPaths = LOCAL_WASM_PATH;
-          this.session = await ort.InferenceSession.create(MODEL_URL, {
-            executionProviders: ["wasm"],
-            graphOptimizationLevel: "all",
-          });
-        }
+        const modelBuffer = await fetchModelWithProgress(MODEL_URL, (received, total) => {
+          if (total > 0) {
+            const mbReceived = (received / (1024 * 1024)).toFixed(1);
+            const mbTotal = (total / (1024 * 1024)).toFixed(1);
+            onStatus?.(`Loading neural vision network (${mbReceived} MB / ${mbTotal} MB)...`);
+          } else {
+            const mbReceived = (received / (1024 * 1024)).toFixed(1);
+            onStatus?.(`Loading neural vision network (${mbReceived} MB)...`);
+          }
+        });
+
+        console.log(`[NailInference] Creating ONNX session from model buffer with local WASM...`);
+        onStatus?.("Compiling local on-device neural vision network...");
+
+        this.session = await ort.InferenceSession.create(modelBuffer, {
+          executionProviders: ["wasm"],
+          graphOptimizationLevel: "all",
+        });
 
         this.modelLoadTimeMs = performance.now() - startTime;
         console.log(

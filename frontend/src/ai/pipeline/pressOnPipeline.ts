@@ -147,7 +147,9 @@ export class PressOnPipeline {
       "Preparing on-device AI vision engine...",
       "Loading local neural vision model in browser"
     );
-    await nailInference.loadModel();
+    await nailInference.loadModel((statusText) => {
+      void notify(2, 35, "Preparing on-device AI vision engine...", statusText);
+    });
     if (!completedSteps.includes(2)) completedSteps.push(2);
     stepBadges[2] = "AI Engine Ready";
     await notify(
