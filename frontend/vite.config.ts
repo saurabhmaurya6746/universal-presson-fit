@@ -29,6 +29,8 @@ function onnxWasmServePlugin(): Plugin {
           const cleanUrl = req.url.split("?")[0];
           const filePath = path.resolve(__dirname, "public" + cleanUrl);
           if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+            const stat = fs.statSync(filePath);
+            res.setHeader("Content-Length", stat.size.toString());
             if (cleanUrl.endsWith(".mjs") || cleanUrl.endsWith(".js")) {
               res.setHeader("Content-Type", "application/javascript");
             } else if (cleanUrl.endsWith(".wasm")) {
@@ -37,6 +39,30 @@ function onnxWasmServePlugin(): Plugin {
               res.setHeader("Content-Type", "application/octet-stream");
             }
             res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+            return fs.createReadStream(filePath).pipe(res);
+          }
+        }
+        next();
+      });
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url && (req.url.startsWith("/onnx/") || req.url.startsWith("/models/"))) {
+          const cleanUrl = req.url.split("?")[0];
+          const filePath = path.resolve(__dirname, "public" + cleanUrl);
+          if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+            const stat = fs.statSync(filePath);
+            res.setHeader("Content-Length", stat.size.toString());
+            if (cleanUrl.endsWith(".mjs") || cleanUrl.endsWith(".js")) {
+              res.setHeader("Content-Type", "application/javascript");
+            } else if (cleanUrl.endsWith(".wasm")) {
+              res.setHeader("Content-Type", "application/wasm");
+            } else if (cleanUrl.endsWith(".onnx")) {
+              res.setHeader("Content-Type", "application/octet-stream");
+            }
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
             return fs.createReadStream(filePath).pipe(res);
           }
         }

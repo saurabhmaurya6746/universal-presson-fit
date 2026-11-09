@@ -11,16 +11,20 @@ import type {
 
 export const MODEL_URL = "/models/best_50epoch.onnx";
 
-const LOCAL_WASM_PATH = "/onnx/";
-
-// Configure WASM paths to purely local assets with explicit timeout
+// Configure WASM paths to purely local, lightweight pure-WASM assets
 try {
   if (typeof window !== "undefined") {
-    // Primary: Same-origin local WASM assets served from /onnx/
-    ort.env.wasm.wasmPaths = LOCAL_WASM_PATH;
+    // Explicitly target the lightweight pure-WASM runtime assets (14.2 MB)
+    // rather than the heavy JSEP build (28.3 MB), cutting download size & compile time in half
+    ort.env.wasm.wasmPaths = {
+      mjs: "/onnx/ort-wasm-simd-threaded.mjs",
+      wasm: "/onnx/ort-wasm-simd-threaded.wasm",
+    };
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.proxy = false;
-    ort.env.wasm.initTimeout = 45000; // 45s explicit timeout prevents indefinite hanging
+    // Set initTimeout to 0 (ONNX Runtime Web default: no artificial abort timer)
+    // to eliminate premature timeout aborts on slower connections or consumer devices
+    ort.env.wasm.initTimeout = 0;
   }
 } catch (e) {
   console.warn("[NailInference] Error configuring WASM environment:", e);
