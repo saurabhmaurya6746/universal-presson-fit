@@ -7,7 +7,6 @@ import { FaqAccordion } from "@/components/faq/FaqAccordion";
 import { SizeFinderUpload } from "@/components/size-finder/SizeFinderUpload";
 import { SizeFinderAnalyzing } from "@/components/size-finder/SizeFinderAnalyzing";
 import { SizeFinderResults } from "@/components/size-finder/SizeFinderResults";
-import { BrandFitComparison } from "@/components/brand/BrandFitComparison";
 import { SEO } from "@/components/common/SEO";
 import { sizeFinderFaqs } from "@/data/faq";
 import { getBrandById } from "@/services/brandService";
@@ -178,14 +177,12 @@ export function AISizeFinder() {
           )}
 
           {stage === "results" && results && (
-            <>
-              <BrandFitComparison
-                results={results}
-                selectedBrandId={brandParam}
-                onBrandSelect={handleBrandSelect}
-              />
-              <SizeFinderResults results={results} onReset={handleReset} />
-            </>
+            <SizeFinderResults
+              results={results}
+              onReset={handleReset}
+              selectedBrandId={brandParam}
+              onBrandSelect={handleBrandSelect}
+            />
           )}
         </div>
       </section>
