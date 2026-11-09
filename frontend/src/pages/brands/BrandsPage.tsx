@@ -168,23 +168,39 @@ export function BrandsPage() {
                   >
                     <div>
                       <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                              {brand.name}
-                            </h3>
-                            <span title="Sanitized Public Profile">
-                              <ShieldCheck className="size-4.5 text-muted-foreground shrink-0" />
-                            </span>
-                          </div>
-                          {locationStr && (
-                            <p className="mt-1 text-xs font-medium text-muted-foreground">
-                              {locationStr}
-                            </p>
+                        <div className="flex items-start gap-3">
+                          {brand.logo_url && (
+                            <img
+                              src={brand.logo_url}
+                              alt={`${brand.name} logo`}
+                              className="size-11 rounded-xl object-contain border border-border bg-card p-1 shadow-xs shrink-0 mt-0.5"
+                            />
                           )}
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-display text-2xl font-bold tracking-tight text-foreground">
+                                {brand.name}
+                              </h3>
+                              {brand.is_official ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-500/20" title="Official Brand Chart">
+                                  <ShieldCheck className="size-3 text-emerald-600" />
+                                  Official
+                                </span>
+                              ) : (
+                                <span title="Sanitized Public Profile">
+                                  <ShieldCheck className="size-4 text-muted-foreground shrink-0" />
+                                </span>
+                              )}
+                            </div>
+                            {locationStr && (
+                              <p className="mt-1 text-xs font-medium text-muted-foreground">
+                                {locationStr}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <span className="rounded-full bg-lavender/50 px-2.5 py-1 text-[11px] font-semibold text-lavender-deep uppercase tracking-wider">
-                          Studio
+                        <span className="rounded-full bg-lavender/50 px-2.5 py-1 text-[11px] font-semibold text-lavender-deep uppercase tracking-wider shrink-0">
+                          {brand.is_official ? "Brand" : "Studio"}
                         </span>
                       </div>
 
@@ -195,22 +211,45 @@ export function BrandsPage() {
                       )}
 
                       {/* Sizing Chart Preview Badge (if chart available) */}
-                      {brand.sizingChart?.sizes && Object.keys(brand.sizingChart.sizes).length > 0 && (
+                      {brand.sizingChart && (
                         <div className="mt-5 rounded-xl bg-accent/30 p-3 border border-border/40">
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
                             <span className="font-semibold text-foreground">Sizing Chart</span>
                             <span className="truncate max-w-[150px]">{brand.sizingChart.chartName}</span>
                           </div>
-                          <div className="mt-2 grid grid-cols-4 gap-1.5 text-center text-[11px]">
-                            {Object.entries(brand.sizingChart.sizes).slice(0, 4).map(([sz, dims]) => (
-                              <div key={sz} className="rounded-md bg-background/80 py-1 px-1 border border-border/30">
-                                <span className="font-bold text-foreground block">{sz}</span>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {dims.thumb}mm
-                                </span>
+
+                          {brand.sizingChart.sizes && Object.keys(brand.sizingChart.sizes).length > 0 ? (
+                            <div className="mt-2 grid grid-cols-4 gap-1.5 text-center text-[11px]">
+                              {Object.entries(brand.sizingChart.sizes).slice(0, 4).map(([sz, dims]) => (
+                                <div key={sz} className="rounded-md bg-background/80 py-1 px-1 border border-border/30">
+                                  <span className="font-bold text-foreground block">{sz}</span>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {dims.thumb}mm
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : brand.sizingChart.numbered_sizes && brand.sizingChart.numbered_sizes.length > 0 ? (
+                            <div className="mt-2 grid grid-cols-4 gap-1.5 text-center text-[11px]">
+                              {brand.sizingChart.numbered_sizes.slice(0, 4).map((ns, idx) => (
+                                <div key={idx} className="rounded-md bg-background/80 py-1 px-1 border border-border/30">
+                                  <span className="font-bold text-foreground block">#{ns.size}</span>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {ns.is_approximate ? "~" : ""}{ns.width_mm ?? ns.min_width_mm}mm
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : brand.sizingChart.shape_ranges && brand.sizingChart.shape_ranges.length > 0 ? (
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                {brand.sizingChart.shape_ranges.length} Silhouette Shapes
+                              </span>
+                              <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                                {brand.sizingChart.shape_ranges.slice(0, 3).map((s) => s.shape).join(", ")}...
                               </div>
-                            ))}
-                          </div>
+                            </div>
+                          ) : null}
                         </div>
                       )}
 

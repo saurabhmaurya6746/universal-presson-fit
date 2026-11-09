@@ -429,6 +429,12 @@ export function AdminPreviewPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <Button asChild size="sm" className="gap-1.5 text-xs bg-lavender-deep text-white hover:bg-lavender-deep/90 shadow-soft">
+              <Link to="/admin/brand-sizing-charts">
+                <Table className="size-3.5" />
+                Brand Sizing Charts
+              </Link>
+            </Button>
             <Button asChild variant="outline" size="sm" className="gap-1.5 text-xs">
               <Link to="/brand/brand-aura-luxury/dashboard">
                 <Layers className="size-3.5" />

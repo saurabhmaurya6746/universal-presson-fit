@@ -21,12 +21,16 @@ def anyio_backend():
     return "asyncio"
 
 @pytest.mark.anyio
-async def test_registration_normalizes_email_and_stores_argon2id_hash_never_plaintext(db_session: Session):
+async def test_registration_normalizes_email_and_stores_argon2id_hash_never_plaintext(
+    db_session: Session,
+    monkeypatch,
+):
     """
     Test Case 1:
     Verify registration normalizes email (lowercase, stripped) and stores Argon2id hash.
     Verify plaintext password and raw verification tokens are NEVER stored in DB.
     """
+    monkeypatch.setattr(settings, "REQUIRE_EMAIL_VERIFICATION", True)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         raw_pw = "SuperSecurePassword123!"

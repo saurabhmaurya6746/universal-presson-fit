@@ -13,13 +13,20 @@ def serialize_public_chart(chart: SizingChart) -> Dict[str, Any]:
     """
     Serialize SizingChart and its entries strictly for customer-facing public use.
     Produces shapes directly compatible with both publicBrandRepository and brandMatchingService:
-    - Provides 'sizes' finger map for Format A (per_size)
+    - Provides 'sizes' finger map for Format A (per_size / preset_set)
     - Provides 'ranges' array for Format B (width_ranges)
+    - Provides 'numbered_sizes' for Numbered Size charts
+    - Provides 'shape_ranges' for Shape-Based Range charts
     - Excludes internal notes, trial records, and owner IDs.
     """
     entries = []
-    sizes: Dict[str, Dict[str, float]] = {}
+    sizes: Dict[str, Dict[str, Any]] = {}
     ranges: List[Dict[str, Any]] = []
+    numbered_sizes: List[Dict[str, Any]] = []
+    shape_ranges: List[Dict[str, Any]] = []
+    length_numbered_sizes: Dict[str, Dict[str, float]] = {}
+
+    format_norm = (chart.format or "").lower().strip()
 
     for e in (chart.entries or []):
         thumb = float(e.thumb_width_mm) if e.thumb_width_mm is not None else None
@@ -29,29 +36,69 @@ def serialize_public_chart(chart: SizingChart) -> Dict[str, Any]:
         pinky = float(e.pinky_width_mm) if e.pinky_width_mm is not None else None
         min_w = float(e.min_width_mm) if e.min_width_mm is not None else None
         max_w = float(e.max_width_mm) if e.max_width_mm is not None else None
+        w_mm = float(e.width_mm) if e.width_mm is not None else None
+        l_mm = float(e.length_mm) if e.length_mm is not None else None
+        min_l = float(e.min_length_mm) if e.min_length_mm is not None else None
+        max_l = float(e.max_length_mm) if e.max_length_mm is not None else None
+        thick = float(e.thickness_mm) if e.thickness_mm is not None else None
 
-        entries.append({
+        entry_data = {
             "id": str(e.id),
             "chart_id": str(e.chart_id),
             "size_label": e.size_label,
+            "shape": e.shape,
+            "finger": e.finger,
+            "typical_finger": e.typical_finger,
+            "width_mm": w_mm,
+            "length_mm": l_mm,
+            "min_width_mm": min_w,
+            "max_width_mm": max_w,
+            "min_length_mm": min_l,
+            "max_length_mm": max_l,
+            "thickness_mm": thick,
+            "is_approximate": bool(e.is_approximate),
             "thumb_width_mm": thumb,
             "index_width_mm": index,
             "middle_width_mm": middle,
             "ring_width_mm": ring,
             "pinky_width_mm": pinky,
-            "min_width_mm": min_w,
-            "max_width_mm": max_w,
             "display_order": e.display_order,
-        })
+        }
+        entries.append(entry_data)
 
-        if chart.format == "width_ranges":
+        if format_norm == "width_ranges":
             if min_w is not None and max_w is not None:
                 ranges.append({
                     "sizeLabel": e.size_label,
                     "minMm": min_w,
                     "maxMm": max_w,
                 })
+        elif format_norm in ("numbered_size", "numbered"):
+            numbered_sizes.append({
+                "size": e.size_label,
+                "width_mm": w_mm,
+                "min_width_mm": min_w,
+                "max_width_mm": max_w,
+                "is_approximate": bool(e.is_approximate),
+                "typical_finger": e.typical_finger,
+            })
+        elif format_norm in ("shape_range", "shape_based"):
+            shape_ranges.append({
+                "shape": e.shape or e.size_label,
+                "length_min_mm": min_l,
+                "length_max_mm": max_l,
+                "width_min_mm": min_w,
+                "width_max_mm": max_w,
+                "thickness_mm": thick,
+            })
+        elif format_norm in ("length_only_numbered", "length_only"):
+            shp = e.shape or "Standard"
+            if shp not in length_numbered_sizes:
+                length_numbered_sizes[shp] = {}
+            if l_mm is not None:
+                length_numbered_sizes[shp][e.size_label] = l_mm
         else:
+            # per_size / preset_set
             sizes[e.size_label] = {
                 "thumb": thumb or 0.0,
                 "index": index or 0.0,
@@ -62,6 +109,11 @@ def serialize_public_chart(chart: SizingChart) -> Dict[str, Any]:
 
     updated_date = chart.updated_at.strftime("%Y-%m-%d") if chart.updated_at else ""
 
+    # Keep compatibility with existing format strings
+    client_format = chart.format
+    if format_norm in ("per_size", "preset_set"):
+        client_format = "per_size_fingers" if format_norm == "per_size" else "preset_set"
+
     return {
         "id": str(chart.id),
         "brand_id": str(chart.brand_id),
@@ -69,16 +121,23 @@ def serialize_public_chart(chart: SizingChart) -> Dict[str, Any]:
         "chart_name": chart.chart_name,
         "chartName": chart.chart_name,
         "unit": chart.unit or "mm",
-        "format": "width_ranges" if chart.format == "width_ranges" else "per_size_fingers",
+        "format": client_format,
         "raw_format": chart.format,
         "updatedDate": updated_date,
         "custom_notes": chart.custom_notes,
         "customNotes": chart.custom_notes,
         "source_type": chart.source_type,
         "sourceType": chart.source_type,
+        "source_url": chart.source_url,
+        "source_notes": chart.source_notes,
+        "verification_status": chart.verification_status,
+        "is_official": chart.is_official,
         "version": chart.version,
         "sizes": sizes,
         "ranges": ranges,
+        "numbered_sizes": numbered_sizes,
+        "shape_ranges": shape_ranges,
+        "length_numbered_sizes": length_numbered_sizes,
         "sizing_chart_entries": entries,
         "created_at": chart.created_at.isoformat() if chart.created_at else "",
         "updated_at": chart.updated_at.isoformat() if chart.updated_at else "",
@@ -97,11 +156,13 @@ def serialize_public_brand(brand: Brand, chart: Optional[SizingChart] = None) ->
         "slug": brand.slug,
         "tagline": brand.tagline,
         "description": brand.description,
+        "logo_url": brand.logo_url,
         "website": brand.website,
         "instagram": brand.instagram,
         "city": brand.city,
         "country": brand.country,
         "shapes": brand.shapes or [],
+        "is_official": brand.is_official,
         "created_at": brand.created_at.isoformat() if brand.created_at else None,
         "updated_at": brand.updated_at.isoformat() if brand.updated_at else None,
     }

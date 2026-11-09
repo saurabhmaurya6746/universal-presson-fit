@@ -32,7 +32,7 @@ def test_alembic_clean_upgrade_from_base_reaches_new_head_and_enforces_roles(
 
     with test_engine.connect() as conn:
         rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert rev == "003_reconcile_brand_member_roles"
+        assert rev == "005_length_only_numbered_charts"
 
         # Verify core tables present
         inspector = inspect(test_engine)
@@ -208,7 +208,7 @@ def test_downgrade_and_reupgrade_when_no_unresolved_rows_exist(
 
     with test_engine.connect() as conn:
         rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert rev == "003_reconcile_brand_member_roles"
+        assert rev == "005_length_only_numbered_charts"
 
     # 3. Downgrade to 002_auth_foundation succeeds
     command.downgrade(alembic_config, "002_auth_foundation")
@@ -222,7 +222,7 @@ def test_downgrade_and_reupgrade_when_no_unresolved_rows_exist(
 
     with test_engine.connect() as conn:
         rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert rev == "003_reconcile_brand_member_roles"
+        assert rev == "005_length_only_numbered_charts"
 
     # 5. Clean downgrade to base and re-upgrade to head leaves database at head
     command.downgrade(alembic_config, "base")
@@ -233,3 +233,7 @@ def test_downgrade_and_reupgrade_when_no_unresolved_rows_exist(
     inspector = inspect(test_engine)
     assert "sizing_charts" in set(inspector.get_table_names())
     assert "brand_members" in set(inspector.get_table_names())
+
+    # Ensure official charts are re-seeded so database remains ready for live usage
+    from app.db.seed_official_charts import run_seeds
+    run_seeds()

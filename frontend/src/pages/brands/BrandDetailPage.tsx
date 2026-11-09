@@ -1,7 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Sparkles, ShieldCheck, Globe, Instagram, MapPin, Calendar, AlertCircle, RefreshCw } from "lucide-react";
-import { PageIntro } from "@/components/ui/PageIntro";
+import {
+  ArrowLeft,
+  Sparkles,
+  ShieldCheck,
+  Globe,
+  Instagram,
+  MapPin,
+  Calendar,
+  AlertCircle,
+  RefreshCw,
+  ExternalLink,
+  FileText,
+  CheckCircle2,
+  Ruler,
+  Info,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SEO } from "@/components/common/SEO";
 import { publicBrandRepository } from "@/services/publicBrandRepository";
@@ -74,9 +88,23 @@ export function BrandDetailPage() {
   }
 
   const { sizingChart } = brand;
+  const chartFormat = sizingChart?.format || (sizingChart?.ranges && sizingChart.ranges.length > 0 ? "width_ranges" : "preset_set");
+  const isLengthOnly =
+    chartFormat === "length_only_numbered" ||
+    Boolean(sizingChart?.length_numbered_sizes && Object.keys(sizingChart.length_numbered_sizes).length > 0) ||
+    Boolean(sizingChart?.sizing_chart_entries?.some((e) => e.length_mm != null && e.width_mm == null));
+  const isNumberedSize =
+    !isLengthOnly &&
+    (chartFormat === "numbered_size" ||
+      Boolean(sizingChart?.numbered_sizes && sizingChart.numbered_sizes.length > 0));
+  const isShapeRange =
+    !isLengthOnly &&
+    (chartFormat === "shape_range" ||
+      Boolean(sizingChart?.shape_ranges && sizingChart.shape_ranges.length > 0));
   const isWidthRanges =
-    sizingChart?.format === "width_ranges" &&
-    Boolean(sizingChart.ranges && sizingChart.ranges.length > 0);
+    !isLengthOnly &&
+    chartFormat === "width_ranges" &&
+    Boolean(sizingChart?.ranges && sizingChart.ranges.length > 0);
   const sizeKeys = sizingChart ? Object.keys(sizingChart.sizes || {}) : [];
   const locationStr = [brand.city, brand.country].filter(Boolean).join(", ");
 
@@ -97,12 +125,34 @@ export function BrandDetailPage() {
         </Link>
       </div>
 
-      <PageIntro
-        eyebrow="Studio Sizing Profile"
-        title={brand.name}
-      >
-        {brand.tagline || ""}
-      </PageIntro>
+      <div className="section-shell pt-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        {brand.logo_url && (
+          <img
+            src={brand.logo_url}
+            alt={`${brand.name} logo`}
+            className="size-16 sm:size-20 rounded-2xl object-contain border border-border bg-card p-2 shadow-soft shrink-0"
+          />
+        )}
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs uppercase tracking-wider font-semibold text-lavender-deep">
+              {brand.is_official ? "Official Brand Sizing" : "Studio Sizing Profile"}
+            </span>
+            {brand.is_official && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                <ShieldCheck className="size-3 text-emerald-600" />
+                Official Brand
+              </span>
+            )}
+          </div>
+          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground mt-1">
+            {brand.name}
+          </h1>
+          {brand.tagline && (
+            <p className="mt-1 text-sm sm:text-base text-muted-foreground">{brand.tagline}</p>
+          )}
+        </div>
+      </div>
 
       {/* Demo / Status Notice */}
       <div className="section-shell">
@@ -167,9 +217,159 @@ export function BrandDetailPage() {
                     This studio has not yet published an active sizing chart.
                   </p>
                 </div>
+              ) : isLengthOnly ? (
+                /* FORMAT E: LENGTH-ONLY NUMBERED SPECIFICATIONS */
+                <div className="mt-6 space-y-4">
+                  <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 p-3.5 text-xs text-purple-950 dark:text-purple-300 flex items-start gap-2.5">
+                    <Info className="size-4 shrink-0 text-purple-600 mt-0.5" />
+                    <div>
+                      <strong>Vertical Length Chart:</strong> Lengths in millimeters measured from cuticle base to tip across numbered sizes #0 (longest) to #9 (shortest). Nail width measurements are not provided by this brand.
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-border/80">
+                    <table className="w-full text-left text-xs sm:text-sm">
+                      <thead>
+                        <tr className="border-b border-border/80 bg-accent/30 text-[11px] font-semibold uppercase text-muted-foreground">
+                          <th className="py-3 px-4">Shape</th>
+                          <th className="py-3 px-2 text-center">#0</th>
+                          <th className="py-3 px-2 text-center">#1</th>
+                          <th className="py-3 px-2 text-center">#2</th>
+                          <th className="py-3 px-2 text-center">#3</th>
+                          <th className="py-3 px-2 text-center">#4</th>
+                          <th className="py-3 px-2 text-center">#5</th>
+                          <th className="py-3 px-2 text-center">#6</th>
+                          <th className="py-3 px-2 text-center">#7</th>
+                          <th className="py-3 px-2 text-center">#8</th>
+                          <th className="py-3 px-2 text-center">#9</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40 font-mono">
+                        {(() => {
+                          const shapesMap: Record<string, Record<string, number>> = { ...(sizingChart.length_numbered_sizes || {}) };
+                          if (Object.keys(shapesMap).length === 0 && sizingChart.sizing_chart_entries) {
+                            for (const e of sizingChart.sizing_chart_entries) {
+                              if (e.length_mm != null) {
+                                const shp = e.shape || "Standard";
+                                if (!shapesMap[shp]) shapesMap[shp] = {};
+                                shapesMap[shp][e.size_label] = Number(e.length_mm);
+                              }
+                            }
+                          }
+                          return Object.entries(shapesMap).map(([shapeName, sizes]) => (
+                            <tr key={shapeName} className="hover:bg-accent/20 transition-colors">
+                              <td className="py-3 px-4 font-bold font-sans text-foreground whitespace-nowrap">
+                                {shapeName}
+                              </td>
+                              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => {
+                                const val = sizes[`#${num}`] ?? sizes[`${num}`];
+                                return (
+                                  <td key={num} className="py-3 px-2 text-center text-foreground font-semibold">
+                                    {val != null ? `${val} mm` : "—"}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : isShapeRange ? (
+                /* FORMAT C: SHAPE-BASED MEASUREMENT SPECIFICATIONS */
+                <div className="mt-6 space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Ruler className="size-3.5 text-lavender-deep" />
+                    <span>Physical millimeter bounds per silhouette shape (Length × Width ranges, Thickness)</span>
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border border-border/80">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-border/80 bg-accent/30 text-xs font-semibold uppercase text-muted-foreground">
+                          <th className="py-3 px-4">Nail Shape</th>
+                          <th className="py-3 px-3">Length Min</th>
+                          <th className="py-3 px-3">Length Max</th>
+                          <th className="py-3 px-3">Width Min</th>
+                          <th className="py-3 px-3">Width Max</th>
+                          <th className="py-3 px-3">Thickness</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40 font-mono">
+                        {sizingChart.shape_ranges!.map((sr, idx) => (
+                          <tr key={idx} className="hover:bg-accent/20 transition-colors">
+                            <td className="py-3 px-4 font-bold font-sans text-foreground">
+                              {sr.shape}
+                            </td>
+                            <td className="py-3 px-3 text-foreground">
+                              {sr.length_min_mm != null ? `${Number(sr.length_min_mm).toFixed(2)} mm` : "—"}
+                            </td>
+                            <td className="py-3 px-3 text-foreground">
+                              {sr.length_max_mm != null ? `${Number(sr.length_max_mm).toFixed(2)} mm` : "—"}
+                            </td>
+                            <td className="py-3 px-3 text-foreground font-semibold">
+                              {sr.width_min_mm != null ? `${Number(sr.width_min_mm).toFixed(2)} mm` : "—"}
+                            </td>
+                            <td className="py-3 px-3 text-foreground font-semibold">
+                              {sr.width_max_mm != null ? `${Number(sr.width_max_mm).toFixed(2)} mm` : "—"}
+                            </td>
+                            <td className="py-3 px-3 text-muted-foreground">
+                              {sr.thickness_mm != null ? `${Number(sr.thickness_mm).toFixed(1)} mm` : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : isNumberedSize ? (
+                /* FORMAT B: NUMBERED SIZE CHART (PRESERVES EXACT BRAND ORDERING & RANGES) */
+                <div className="mt-6 space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Ruler className="size-3.5 text-lavender-deep" />
+                    <span>Individual tip numbering ordered according to official brand guidelines</span>
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border border-border/80">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-border/80 bg-accent/30 text-xs font-semibold uppercase text-muted-foreground">
+                          <th className="py-3 px-4">Size Number</th>
+                          <th className="py-3 px-3">Tip Width (mm)</th>
+                          <th className="py-3 px-3">Typical Hand & Finger Placement</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40 font-mono">
+                        {sizingChart.numbered_sizes!.map((ns, idx) => {
+                          const widthDisplay =
+                            ns.min_width_mm != null && ns.max_width_mm != null && ns.min_width_mm !== ns.max_width_mm
+                              ? `${ns.is_approximate ? "~" : ""}${ns.min_width_mm}–${ns.max_width_mm} mm`
+                              : ns.width_mm != null
+                              ? `${ns.is_approximate ? "~" : ""}${ns.width_mm} mm`
+                              : "—";
+
+                          return (
+                            <tr key={idx} className="hover:bg-accent/20 transition-colors">
+                              <td className="py-3.5 px-4 font-bold font-sans text-foreground">
+                                <span className="inline-flex size-8 items-center justify-center rounded-lg bg-secondary text-secondary-foreground text-xs font-bold">
+                                  #{ns.size}
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-3 font-semibold text-foreground">
+                                {widthDisplay}
+                              </td>
+                              <td className="py-3.5 px-3 font-sans text-xs text-muted-foreground">
+                                {ns.typical_finger || "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               ) : isWidthRanges ? (
-                /* FORMAT B: NAIL WIDTH RANGES TABLE */
-                <div className="mt-6 overflow-x-auto">
+                /* FORMAT D: NAIL WIDTH RANGES TABLE */
+                <div className="mt-6 overflow-x-auto rounded-xl border border-border/80">
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b border-border/80 bg-accent/30 text-xs font-semibold uppercase text-muted-foreground">
@@ -202,12 +402,12 @@ export function BrandDetailPage() {
                   </table>
                 </div>
               ) : (
-                /* FORMAT A: PER-SIZE FINGER MATRIX TABLE */
-                <div className="mt-6 overflow-x-auto">
+                /* FORMAT A: PER-SIZE FINGER MATRIX TABLE (PRESET SET XS/S/M/L) */
+                <div className="mt-6 overflow-x-auto rounded-xl border border-border/80">
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b border-border/80 bg-accent/30 text-xs font-semibold uppercase text-muted-foreground">
-                        <th className="py-3 px-4">Size Code</th>
+                        <th className="py-3 px-4">Size Set</th>
                         <th className="py-3 px-3">Thumb (mm)</th>
                         <th className="py-3 px-3">Index (mm)</th>
                         <th className="py-3 px-3">Middle (mm)</th>
@@ -235,6 +435,52 @@ export function BrandDetailPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+              {/* Source & Verification Metadata Box */}
+              {sizingChart && (
+                <div className="mt-6 space-y-3 pt-4 border-t border-border/60">
+                  {sizingChart.verification_status === "user_provided" && (
+                    <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-300">
+                      <FileText className="size-4 shrink-0 text-amber-600 mt-0.5" />
+                      <div>
+                        <strong>User-Provided Sizing Documentation:</strong> Sizing chart specifications were extracted directly from user-supplied official brand charts and measurement guides.
+                      </div>
+                    </div>
+                  )}
+
+                  {sizingChart.verification_status === "verified" && (
+                    <div className="flex items-start gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-900 dark:text-emerald-300">
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600 mt-0.5" />
+                      <div>
+                        <strong>Brand Verified:</strong> Specifications verified directly by official brand studio.
+                      </div>
+                    </div>
+                  )}
+
+                  {sizingChart.source_url && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ExternalLink className="size-3.5 text-lavender-deep shrink-0" />
+                      <span>
+                        Source URL:{" "}
+                        <a
+                          href={sizingChart.source_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-lavender-deep hover:underline truncate max-w-sm inline-block align-bottom"
+                        >
+                          {sizingChart.source_url}
+                        </a>
+                      </span>
+                    </div>
+                  )}
+
+                  {sizingChart.source_notes && (
+                    <div className="rounded-xl bg-muted/40 p-3 text-xs text-muted-foreground border border-border/50 font-sans leading-relaxed">
+                      <strong className="text-foreground">Source Notes:</strong> {sizingChart.source_notes}
+                    </div>
+                  )}
                 </div>
               )}
 

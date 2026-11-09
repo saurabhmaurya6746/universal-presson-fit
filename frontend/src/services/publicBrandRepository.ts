@@ -43,6 +43,8 @@ class DemoPublicBrandRepository implements PublicBrandRepository {
         city: b.location?.split(",")[0]?.trim() || null,
         country: b.location?.split(",")[1]?.trim() || "India",
         shapes: b.shapes,
+        logo_url: b.logo_url || null,
+        is_official: b.is_official || false,
         sizingChart: b.sizingChart,
       }));
   }
@@ -64,6 +66,8 @@ class DemoPublicBrandRepository implements PublicBrandRepository {
       city: brand.location?.split(",")[0]?.trim() || null,
       country: brand.location?.split(",")[1]?.trim() || "India",
       shapes: brand.shapes,
+      logo_url: brand.logo_url || null,
+      is_official: brand.is_official || false,
       sizingChart: brand.sizingChart,
     };
   }
@@ -97,21 +101,50 @@ class FastApiPublicBrandRepository implements PublicBrandRepository {
     const data = await resp.json();
     const rows = Array.isArray(data) ? data : [];
 
-    return rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      tagline: row.tagline || null,
-      description: row.description || null,
-      website: row.website || null,
-      instagram: row.instagram || null,
-      city: row.city || null,
-      country: row.country || "India",
-      shapes: row.shapes || [],
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      sizingChart: row.sizingChart || row.sizing_chart,
-    }));
+    return rows.map((row: any) => {
+      const rawChart = row.sizingChart || row.sizing_chart;
+      let sizingChart: BrandSizingChart | undefined = undefined;
+      if (rawChart) {
+        sizingChart = {
+          id: rawChart.id,
+          brandId: rawChart.brand_id || rawChart.brandId,
+          chartName: rawChart.chart_name || rawChart.chartName,
+          unit: rawChart.unit || "mm",
+          updatedDate: rawChart.updatedDate || rawChart.updated_at?.split("T")[0] || "",
+          format: (rawChart.format || "preset_set") as ChartFormat,
+          sizes: rawChart.sizes || {},
+          ranges: rawChart.ranges || [],
+          numbered_sizes: rawChart.numbered_sizes || [],
+          shape_ranges: rawChart.shape_ranges || [],
+          length_numbered_sizes: rawChart.length_numbered_sizes || undefined,
+          sizing_chart_entries: rawChart.sizing_chart_entries || undefined,
+          customNotes: rawChart.custom_notes || rawChart.customNotes || undefined,
+          source_url: rawChart.source_url || null,
+          source_notes: rawChart.source_notes || null,
+          verification_status: rawChart.verification_status || "user_provided",
+          is_official: Boolean(rawChart.is_official),
+          sourceType: (rawChart.source_type || rawChart.sourceType || "preset") as "manual" | "csv_upload" | "json_upload" | "preset",
+        };
+      }
+
+      return {
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        tagline: row.tagline || null,
+        description: row.description || null,
+        website: row.website || null,
+        instagram: row.instagram || null,
+        city: row.city || null,
+        country: row.country || "India",
+        shapes: row.shapes || [],
+        logo_url: row.logo_url || null,
+        is_official: Boolean(row.is_official),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        sizingChart,
+      };
+    });
   }
 
   async getPublicBrandBySlugOrId(idOrSlug: string): Promise<PublicBrandProfile | null> {
@@ -145,11 +178,19 @@ class FastApiPublicBrandRepository implements PublicBrandRepository {
         chartName: rawChart.chart_name || rawChart.chartName,
         unit: rawChart.unit || "mm",
         updatedDate: rawChart.updatedDate || rawChart.updated_at?.split("T")[0] || "",
-        format: (rawChart.format === "width_ranges" ? "width_ranges" : "per_size_fingers") as ChartFormat,
+        format: (rawChart.format || "preset_set") as ChartFormat,
         sizes: rawChart.sizes || {},
         ranges: rawChart.ranges || [],
+        numbered_sizes: rawChart.numbered_sizes || [],
+        shape_ranges: rawChart.shape_ranges || [],
+        length_numbered_sizes: rawChart.length_numbered_sizes || undefined,
+        sizing_chart_entries: rawChart.sizing_chart_entries || undefined,
         customNotes: rawChart.custom_notes || rawChart.customNotes || undefined,
-        sourceType: (rawChart.source_type || rawChart.sourceType || "manual") as "manual" | "csv_upload" | "json_upload" | "preset",
+        source_url: rawChart.source_url || null,
+        source_notes: rawChart.source_notes || null,
+        verification_status: rawChart.verification_status || "user_provided",
+        is_official: Boolean(rawChart.is_official),
+        sourceType: (rawChart.source_type || rawChart.sourceType || "preset") as "manual" | "csv_upload" | "json_upload" | "preset",
       };
     }
 
@@ -164,6 +205,8 @@ class FastApiPublicBrandRepository implements PublicBrandRepository {
       city: data.city || null,
       country: data.country || "India",
       shapes: data.shapes || [],
+      logo_url: data.logo_url || null,
+      is_official: Boolean(data.is_official),
       created_at: data.created_at,
       updated_at: data.updated_at,
       sizingChart,

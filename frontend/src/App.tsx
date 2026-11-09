@@ -25,6 +25,7 @@ import { PersonalSettingsPage } from "@/pages/account/PersonalSettingsPage";
 import { BrandSettingsPage } from "@/pages/brand/BrandSettingsPage";
 import { AdminPreviewPage } from "@/pages/admin/AdminPreviewPage";
 import { AdminSettingsPage } from "@/pages/admin/AdminSettingsPage";
+import { AdminBrandSizingChartsPage } from "@/pages/admin/AdminBrandSizingChartsPage";
 import { RouteGuard } from "@/components/auth/RouteGuard";
 import { BrandPortalRedirect } from "@/components/auth/BrandPortalRedirect";
 import { NotFound } from "@/pages/NotFound";
@@ -116,6 +117,15 @@ export function App() {
               </RouteGuard>
             }
           />
+          <Route
+            path="/admin/brand-sizing-charts"
+            element={
+              <RouteGuard allowedRoles={["admin"]}>
+                <AdminBrandSizingChartsPage />
+              </RouteGuard>
+            }
+          />
+          <Route path="/admin/charts" element={<Navigate to="/admin/brand-sizing-charts" replace />} />
           <Route
             path="/admin/settings"
             element={

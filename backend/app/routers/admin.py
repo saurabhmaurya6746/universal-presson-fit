@@ -81,6 +81,8 @@ class AdminBrandDetailResponse(BaseModel):
     status: str
     is_public: bool
     shapes: List[str]
+    logo_url: Optional[str] = None
+    is_official: bool = False
     admin_notes: Optional[str] = None
     trial: Optional[AdminTrialSummary] = None
     created_at: str
@@ -102,6 +104,7 @@ class AdminChartReviewResponse(BaseModel):
     brand_name: str
     brand_status: str
     brand_is_public: bool
+    is_official: bool = False
     chart_name: str
     format: str
     unit: str
@@ -110,7 +113,129 @@ class AdminChartReviewResponse(BaseModel):
     version: int
     entry_count: int
     custom_notes: Optional[str] = None
+    source_url: Optional[str] = None
+    verification_status: Optional[str] = None
     created_at: str
+    updated_at: str
+
+
+class AdminChartEntryPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: Optional[str] = None
+    size_label: str = Field(..., max_length=50)
+    shape: Optional[str] = Field(None, max_length=100)
+    finger: Optional[str] = Field(None, max_length=50)
+    typical_finger: Optional[str] = Field(None, max_length=150)
+    width_mm: Optional[float] = None
+    length_mm: Optional[float] = None
+    min_width_mm: Optional[float] = None
+    max_width_mm: Optional[float] = None
+    min_length_mm: Optional[float] = None
+    max_length_mm: Optional[float] = None
+    thickness_mm: Optional[float] = None
+    is_approximate: bool = False
+    thumb_width_mm: Optional[float] = None
+    index_width_mm: Optional[float] = None
+    middle_width_mm: Optional[float] = None
+    ring_width_mm: Optional[float] = None
+    pinky_width_mm: Optional[float] = None
+    display_order: int = 0
+
+
+class AdminCreateBrandChartRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    brand_id: Optional[str] = None
+    brand_name: Optional[str] = Field(None, max_length=100)
+    brand_slug: Optional[str] = Field(None, max_length=100)
+    brand_description: Optional[str] = None
+    brand_tagline: Optional[str] = Field(None, max_length=200)
+    logo_url: Optional[str] = Field(None, max_length=500)
+    website: Optional[str] = Field(None, max_length=255)
+    contact_email: Optional[str] = Field(None, max_length=255)
+    shapes: List[str] = Field(default_factory=list)
+
+    chart_name: str = Field(..., max_length=150)
+    format: str = Field(..., max_length=32)
+    unit: str = Field(default="mm", max_length=16)
+    status: Literal["draft", "published"] = "draft"
+    is_public: bool = False
+    custom_notes: Optional[str] = None
+    source_url: Optional[str] = Field(None, max_length=500)
+    source_notes: Optional[str] = None
+    verification_status: str = Field(default="user_provided", max_length=64)
+    entries: List[AdminChartEntryPayload] = Field(default_factory=list)
+
+
+class AdminUpdateBrandChartRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    brand_name: Optional[str] = Field(None, max_length=100)
+    brand_description: Optional[str] = None
+    brand_tagline: Optional[str] = Field(None, max_length=200)
+    logo_url: Optional[str] = Field(None, max_length=500)
+    website: Optional[str] = Field(None, max_length=255)
+    shapes: Optional[List[str]] = None
+
+    chart_name: Optional[str] = Field(None, max_length=150)
+    format: Optional[str] = Field(None, max_length=32)
+    unit: Optional[str] = Field(None, max_length=16)
+    status: Optional[Literal["draft", "published"]] = None
+    is_public: Optional[bool] = None
+    custom_notes: Optional[str] = None
+    source_url: Optional[str] = Field(None, max_length=500)
+    source_notes: Optional[str] = None
+    verification_status: Optional[str] = Field(None, max_length=64)
+    entries: Optional[List[AdminChartEntryPayload]] = None
+
+
+class AdminChartDetailResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    brand_id: str
+    brand_name: str
+    brand_slug: str
+    brand_logo_url: Optional[str] = None
+    brand_description: Optional[str] = None
+    brand_website: Optional[str] = None
+    brand_shapes: List[str]
+    is_official: bool
+    chart_name: str
+    format: str
+    unit: str
+    status: str
+    is_public: bool
+    custom_notes: Optional[str] = None
+    source_url: Optional[str] = None
+    source_notes: Optional[str] = None
+    verification_status: str
+    version: int
+    entries: List[Dict[str, Any]]
+    created_at: str
+    updated_at: str
+
+
+class AdminSizingChartListItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    brand_id: str
+    brand_name: str
+    brand_slug: str
+    brand_logo_url: Optional[str] = None
+    is_official: bool
+    chart_name: str
+    format: str
+    unit: str
+    status: str
+    is_public: bool
+    version: int
+    entry_count: int
+    shapes_count: int
+    source_url: Optional[str] = None
+    verification_status: str
     updated_at: str
 
 
@@ -312,6 +437,8 @@ def serialize_admin_brand(brand: Brand) -> AdminBrandDetailResponse:
         status=brand.status,
         is_public=brand.is_public,
         shapes=brand.shapes or [],
+        logo_url=brand.logo_url,
+        is_official=brand.is_official,
         admin_notes=brand.admin_notes,
         trial=build_trial_summary(brand.trial),
         created_at=brand.created_at.isoformat() if brand.created_at else "",
@@ -928,3 +1055,491 @@ def list_audit_events(
         )
         for e in events
     ]
+
+
+# ==============================================================================
+# 9. Brand Sizing Charts Management (Universal Official & Partner Charts)
+# ==============================================================================
+
+def slugify(text: str) -> str:
+    s = re.sub(r"[^\w\s-]", "", text).strip().lower()
+    return re.sub(r"[-\s]+", "-", s)
+
+
+def serialize_admin_chart_detail(chart: SizingChart) -> AdminChartDetailResponse:
+    brand = chart.brand
+    entries = []
+    for e in (chart.entries or []):
+        entries.append({
+            "id": str(e.id),
+            "chart_id": str(e.chart_id),
+            "size_label": e.size_label,
+            "shape": e.shape,
+            "finger": e.finger,
+            "typical_finger": e.typical_finger,
+            "width_mm": float(e.width_mm) if e.width_mm is not None else None,
+            "length_mm": float(e.length_mm) if e.length_mm is not None else None,
+            "min_width_mm": float(e.min_width_mm) if e.min_width_mm is not None else None,
+            "max_width_mm": float(e.max_width_mm) if e.max_width_mm is not None else None,
+            "min_length_mm": float(e.min_length_mm) if e.min_length_mm is not None else None,
+            "max_length_mm": float(e.max_length_mm) if e.max_length_mm is not None else None,
+            "thickness_mm": float(e.thickness_mm) if e.thickness_mm is not None else None,
+            "is_approximate": bool(e.is_approximate),
+            "thumb_width_mm": float(e.thumb_width_mm) if e.thumb_width_mm is not None else None,
+            "index_width_mm": float(e.index_width_mm) if e.index_width_mm is not None else None,
+            "middle_width_mm": float(e.middle_width_mm) if e.middle_width_mm is not None else None,
+            "ring_width_mm": float(e.ring_width_mm) if e.ring_width_mm is not None else None,
+            "pinky_width_mm": float(e.pinky_width_mm) if e.pinky_width_mm is not None else None,
+            "display_order": e.display_order,
+        })
+
+    return AdminChartDetailResponse(
+        id=str(chart.id),
+        brand_id=str(chart.brand_id),
+        brand_name=brand.name if brand else "",
+        brand_slug=brand.slug if brand else "",
+        brand_logo_url=brand.logo_url if brand else None,
+        brand_description=brand.description if brand else None,
+        brand_website=brand.website if brand else None,
+        brand_shapes=brand.shapes if (brand and brand.shapes) else [],
+        is_official=bool(chart.is_official or (brand and brand.is_official)),
+        chart_name=chart.chart_name,
+        format=chart.format,
+        unit=chart.unit or "mm",
+        status=chart.status,
+        is_public=chart.is_public,
+        custom_notes=chart.custom_notes,
+        source_url=chart.source_url,
+        source_notes=chart.source_notes,
+        verification_status=chart.verification_status or "user_provided",
+        version=chart.version,
+        entries=entries,
+        created_at=chart.created_at.isoformat() if chart.created_at else "",
+        updated_at=chart.updated_at.isoformat() if chart.updated_at else "",
+    )
+
+
+@router.get("/sizing-charts", response_model=List[AdminSizingChartListItem])
+def list_admin_sizing_charts(
+    format: Optional[str] = Query(None, description="Filter by chart format"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status (draft/published)"),
+    is_official: Optional[bool] = Query(None, description="Filter by official brand status"),
+    search: Optional[str] = Query(None, description="Search by chart or brand name"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    List all sizing charts with brand details, format, entry counts, and publication status.
+    Supports filtering by format, status, official flag, and search query.
+    """
+    q = db.query(SizingChart).join(Brand, SizingChart.brand_id == Brand.id)
+
+    if format and format != "all":
+        q = q.filter(SizingChart.format == format.lower())
+    if status_filter and status_filter != "all":
+        q = q.filter(SizingChart.status == status_filter.lower())
+    if is_official is not None:
+        q = q.filter((SizingChart.is_official == is_official) | (Brand.is_official == is_official))
+    if search:
+        s_pattern = f"%{search.strip()}%"
+        q = q.filter((SizingChart.chart_name.ilike(s_pattern)) | (Brand.name.ilike(s_pattern)))
+
+    charts = q.order_by(SizingChart.updated_at.desc()).offset(offset).limit(limit).all()
+
+    items = []
+    for c in charts:
+        b = c.brand
+        items.append(
+            AdminSizingChartListItem(
+                id=str(c.id),
+                brand_id=str(c.brand_id),
+                brand_name=b.name if b else "",
+                brand_slug=b.slug if b else "",
+                brand_logo_url=b.logo_url if b else None,
+                is_official=bool(c.is_official or (b and b.is_official)),
+                chart_name=c.chart_name,
+                format=c.format,
+                unit=c.unit or "mm",
+                status=c.status,
+                is_public=c.is_public,
+                version=c.version,
+                entry_count=len(c.entries or []),
+                shapes_count=len(b.shapes or []) if b else 0,
+                source_url=c.source_url,
+                verification_status=c.verification_status or "user_provided",
+                updated_at=c.updated_at.isoformat() if c.updated_at else "",
+            )
+        )
+    return items
+
+
+@router.post("/sizing-charts", response_model=AdminChartDetailResponse, status_code=status.HTTP_201_CREATED)
+def create_admin_brand_sizing_chart(
+    req: AdminCreateBrandChartRequest,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new brand and its sizing chart directly from the Admin Panel.
+    Can attach to an existing brand or create a new official brand.
+    Enforces format constraints, strict 1-to-1 brand chart cardinality,
+    and records an audit event.
+    """
+    brand: Optional[Brand] = None
+
+    if req.brand_id:
+        try:
+            b_uuid = uuid.UUID(req.brand_id)
+            brand = db.query(Brand).filter(Brand.id == b_uuid).first()
+            if not brand:
+                raise HTTPException(status_code=404, detail="Specified brand not found.")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid brand_id UUID format.")
+    else:
+        # Create brand
+        if not req.brand_name or not req.brand_name.strip():
+            raise HTTPException(status_code=422, detail="brand_name is required when creating a new brand.")
+
+        base_slug = req.brand_slug.strip().lower() if req.brand_slug else slugify(req.brand_name)
+        if not base_slug:
+            base_slug = f"brand-{uuid.uuid4().hex[:6]}"
+
+        # Check slug collision
+        existing_slug = db.query(Brand).filter(Brand.slug == base_slug).first()
+        if existing_slug:
+            slug = f"{base_slug}-{uuid.uuid4().hex[:4]}"
+        else:
+            slug = base_slug
+
+        brand = Brand(
+            id=uuid.uuid4(),
+            owner_id=current_admin.id,
+            name=req.brand_name.strip(),
+            slug=slug,
+            tagline=req.brand_tagline.strip() if req.brand_tagline else None,
+            description=req.brand_description.strip() if req.brand_description else None,
+            logo_url=req.logo_url.strip() if req.logo_url else None,
+            website=req.website.strip() if req.website else None,
+            contact_email=req.contact_email.strip() if req.contact_email else current_admin.email,
+            country="India",
+            status="active" if req.status == "published" else "active",
+            is_public=req.is_public if req.status == "published" else False,
+            is_official=True,
+            shapes=req.shapes or [],
+        )
+        db.add(brand)
+        db.flush()
+
+    # Check existing chart on this brand
+    existing_chart = db.query(SizingChart).filter(SizingChart.brand_id == brand.id).first()
+    if existing_chart:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This brand already has an existing sizing chart. Edit the existing chart instead.",
+        )
+
+    # Validate format
+    format_clean = req.format.strip().lower()
+    allowed_formats = {"preset_set", "numbered_size", "shape_range", "per_size", "width_ranges", "length_only_numbered"}
+    if format_clean not in allowed_formats:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported chart format '{req.format}'. Must be one of: {sorted(allowed_formats)}",
+        )
+
+    chart = SizingChart(
+        id=uuid.uuid4(),
+        brand_id=brand.id,
+        chart_name=req.chart_name.strip(),
+        format=format_clean,
+        unit=req.unit.strip().lower() if req.unit else "mm",
+        status=req.status,
+        is_public=req.is_public,
+        custom_notes=req.custom_notes.strip() if req.custom_notes else None,
+        source_url=req.source_url.strip() if req.source_url else None,
+        source_notes=req.source_notes.strip() if req.source_notes else None,
+        verification_status=req.verification_status or "user_provided",
+        is_official=True,
+        source_type="manual",
+        version=1,
+    )
+    db.add(chart)
+    db.flush()
+
+    # Create entries
+    for idx, e in enumerate(req.entries):
+        from decimal import Decimal
+
+        def to_dec(val: Optional[float]) -> Optional[Decimal]:
+            return Decimal(str(val)) if val is not None else None
+
+        entry = SizingChartEntry(
+            id=uuid.uuid4(),
+            chart_id=chart.id,
+            size_label=e.size_label.strip(),
+            shape=e.shape.strip() if e.shape else None,
+            finger=e.finger.strip() if e.finger else None,
+            typical_finger=e.typical_finger.strip() if e.typical_finger else None,
+            width_mm=to_dec(e.width_mm),
+            length_mm=to_dec(e.length_mm),
+            min_width_mm=to_dec(e.min_width_mm),
+            max_width_mm=to_dec(e.max_width_mm),
+            min_length_mm=to_dec(e.min_length_mm),
+            max_length_mm=to_dec(e.max_length_mm),
+            thickness_mm=to_dec(e.thickness_mm),
+            is_approximate=bool(e.is_approximate),
+            thumb_width_mm=to_dec(e.thumb_width_mm),
+            index_width_mm=to_dec(e.index_width_mm),
+            middle_width_mm=to_dec(e.middle_width_mm),
+            ring_width_mm=to_dec(e.ring_width_mm),
+            pinky_width_mm=to_dec(e.pinky_width_mm),
+            display_order=e.display_order if e.display_order is not None else idx,
+        )
+        db.add(entry)
+
+    # If publishing, ensure brand is public
+    if req.status == "published" and req.is_public:
+        brand.is_public = True
+        brand.status = "active"
+
+    record_audit_event(
+        db=db,
+        admin_id=current_admin.id,
+        action="create_official_sizing_chart",
+        target_entity="sizing_chart",
+        target_id=chart.id,
+        new_state={"status": chart.status, "is_public": chart.is_public},
+    )
+
+    db.commit()
+    db.refresh(chart)
+    return serialize_admin_chart_detail(chart)
+
+
+@router.get("/sizing-charts/{chart_id}", response_model=AdminChartDetailResponse)
+def get_admin_sizing_chart(
+    chart_id: str = Path(..., description="Sizing chart UUID"),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Get full details and all entries of a sizing chart (including drafts and internal notes).
+    """
+    try:
+        c_uuid = uuid.UUID(chart_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid chart_id UUID format.")
+
+    chart = db.query(SizingChart).filter(SizingChart.id == c_uuid).first()
+    if not chart:
+        raise HTTPException(status_code=404, detail="Sizing chart not found.")
+
+    return serialize_admin_chart_detail(chart)
+
+
+@router.put("/sizing-charts/{chart_id}", response_model=AdminChartDetailResponse)
+def update_admin_sizing_chart(
+    req: AdminUpdateBrandChartRequest,
+    chart_id: str = Path(..., description="Sizing chart UUID"),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Update brand metadata, chart fields, and measurement entries.
+    All edits are recorded in audit logs.
+    """
+    try:
+        c_uuid = uuid.UUID(chart_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid chart_id UUID format.")
+
+    chart = db.query(SizingChart).filter(SizingChart.id == c_uuid).first()
+    if not chart:
+        raise HTTPException(status_code=404, detail="Sizing chart not found.")
+
+    brand = chart.brand
+
+    # Update brand info
+    if brand:
+        if req.brand_name is not None:
+            brand.name = req.brand_name.strip()
+        if req.brand_description is not None:
+            brand.description = req.brand_description.strip()
+        if req.brand_tagline is not None:
+            brand.tagline = req.brand_tagline.strip()
+        if req.logo_url is not None:
+            brand.logo_url = req.logo_url.strip()
+        if req.website is not None:
+            brand.website = req.website.strip()
+        if req.shapes is not None:
+            brand.shapes = req.shapes
+
+    # Update chart info
+    prev_state = {"status": chart.status, "is_public": chart.is_public}
+
+    if req.chart_name is not None:
+        chart.chart_name = req.chart_name.strip()
+    if req.format is not None:
+        chart.format = req.format.strip().lower()
+    if req.unit is not None:
+        chart.unit = req.unit.strip().lower()
+    if req.status is not None:
+        chart.status = req.status
+    if req.is_public is not None:
+        chart.is_public = req.is_public
+    if req.custom_notes is not None:
+        chart.custom_notes = req.custom_notes.strip() if req.custom_notes else None
+    if req.source_url is not None:
+        chart.source_url = req.source_url.strip() if req.source_url else None
+    if req.source_notes is not None:
+        chart.source_notes = req.source_notes.strip() if req.source_notes else None
+    if req.verification_status is not None:
+        chart.verification_status = req.verification_status
+
+    # Update entries if provided
+    if req.entries is not None:
+        from decimal import Decimal
+
+        def to_dec(val: Optional[float]) -> Optional[Decimal]:
+            return Decimal(str(val)) if val is not None else None
+
+        # Remove existing entries
+        for old_e in list(chart.entries or []):
+            db.delete(old_e)
+        db.flush()
+
+        # Add updated entries
+        for idx, e in enumerate(req.entries):
+            entry = SizingChartEntry(
+                id=uuid.uuid4(),
+                chart_id=chart.id,
+                size_label=e.size_label.strip(),
+                shape=e.shape.strip() if e.shape else None,
+                finger=e.finger.strip() if e.finger else None,
+                typical_finger=e.typical_finger.strip() if e.typical_finger else None,
+                width_mm=to_dec(e.width_mm),
+                length_mm=to_dec(e.length_mm),
+                min_width_mm=to_dec(e.min_width_mm),
+                max_width_mm=to_dec(e.max_width_mm),
+                min_length_mm=to_dec(e.min_length_mm),
+                max_length_mm=to_dec(e.max_length_mm),
+                thickness_mm=to_dec(e.thickness_mm),
+                is_approximate=bool(e.is_approximate),
+                thumb_width_mm=to_dec(e.thumb_width_mm),
+                index_width_mm=to_dec(e.index_width_mm),
+                middle_width_mm=to_dec(e.middle_width_mm),
+                ring_width_mm=to_dec(e.ring_width_mm),
+                pinky_width_mm=to_dec(e.pinky_width_mm),
+                display_order=e.display_order if e.display_order is not None else idx,
+            )
+            db.add(entry)
+
+        chart.version += 1
+
+    # Keep brand visibility aligned when published
+    if chart.status == "published" and chart.is_public and brand:
+        brand.is_public = True
+        brand.status = "active"
+
+    record_audit_event(
+        db=db,
+        admin_id=current_admin.id,
+        action="update_sizing_chart",
+        target_entity="sizing_chart",
+        target_id=chart.id,
+        previous_state=prev_state,
+        new_state={"status": chart.status, "is_public": chart.is_public},
+    )
+
+    db.commit()
+    db.refresh(chart)
+    return serialize_admin_chart_detail(chart)
+
+
+@router.patch("/sizing-charts/{chart_id}/publish", response_model=AdminChartDetailResponse)
+def toggle_publish_sizing_chart(
+    action: Literal["publish", "unpublish"] = Query(..., description="Action to perform: publish or unpublish"),
+    chart_id: str = Path(..., description="Sizing chart UUID"),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Publish or unpublish an official or partner sizing chart.
+    Publishing marks the chart status as 'published' and is_public=True,
+    and also makes the parent brand active and public.
+    Unpublishing sets status to 'draft' and is_public=False.
+    """
+    try:
+        c_uuid = uuid.UUID(chart_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid chart_id UUID format.")
+
+    chart = db.query(SizingChart).filter(SizingChart.id == c_uuid).first()
+    if not chart:
+        raise HTTPException(status_code=404, detail="Sizing chart not found.")
+
+    prev_state = {"status": chart.status, "is_public": chart.is_public}
+
+    if action == "publish":
+        chart.status = "published"
+        chart.is_public = True
+        if chart.brand:
+            chart.brand.is_public = True
+            chart.brand.status = "active"
+    else:
+        chart.status = "draft"
+        chart.is_public = False
+
+    record_audit_event(
+        db=db,
+        admin_id=current_admin.id,
+        action=f"{action}_sizing_chart",
+        target_entity="sizing_chart",
+        target_id=chart.id,
+        previous_state=prev_state,
+        new_state={"status": chart.status, "is_public": chart.is_public},
+    )
+
+    db.commit()
+    db.refresh(chart)
+    return serialize_admin_chart_detail(chart)
+
+
+@router.delete("/sizing-charts/{chart_id}")
+def delete_admin_sizing_chart(
+    delete_brand: bool = Query(False, description="Whether to also delete the brand if it is an official brand"),
+    chart_id: str = Path(..., description="Sizing chart UUID"),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete a sizing chart and its entries with confirmation.
+    Optionally deletes the associated brand if it is marked official and has no other charts.
+    """
+    try:
+        c_uuid = uuid.UUID(chart_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid chart_id UUID format.")
+
+    chart = db.query(SizingChart).filter(SizingChart.id == c_uuid).first()
+    if not chart:
+        raise HTTPException(status_code=404, detail="Sizing chart not found.")
+
+    brand = chart.brand
+    record_audit_event(
+        db=db,
+        admin_id=current_admin.id,
+        action="delete_sizing_chart",
+        target_entity="sizing_chart",
+        target_id=chart.id,
+        previous_state={"status": chart.status, "is_public": chart.is_public},
+    )
+
+    db.delete(chart)
+    if delete_brand and brand and brand.is_official:
+        db.delete(brand)
+
+    db.commit()
+    return {"success": True, "message": "Sizing chart deleted successfully."}

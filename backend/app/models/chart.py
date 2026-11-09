@@ -29,7 +29,10 @@ class SizingChart(Base):
     """
     __tablename__ = "sizing_charts"
     __table_args__ = (
-        CheckConstraint("format IN ('per_size', 'width_ranges')", name="ck_sizing_charts_format"),
+        CheckConstraint(
+            "format IN ('per_size', 'width_ranges', 'preset_set', 'numbered_size', 'shape_range', 'length_only_numbered', 'PRESET_SET', 'NUMBERED_SIZE', 'SHAPE_RANGE', 'LENGTH_ONLY_NUMBERED')",
+            name="ck_sizing_charts_format",
+        ),
         CheckConstraint("status IN ('draft', 'published')", name="ck_sizing_charts_status"),
         CheckConstraint(
             "source_type IN ('manual', 'csv_upload', 'json_upload', 'preset')",
@@ -75,6 +78,26 @@ class SizingChart(Base):
     custom_notes: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
+    )
+    source_url: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+    source_notes: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    verification_status: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="user_provided",
+        server_default="user_provided",
+    )
+    is_official: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
     )
     source_type: Mapped[str] = mapped_column(
         String(32),
@@ -132,9 +155,22 @@ class SizingChartEntry(Base):
             "min_width_mm IS NULL OR max_width_mm IS NULL OR min_width_mm <= max_width_mm",
             name="ck_entries_valid_range_bounds",
         ),
+        CheckConstraint(
+            "(min_length_mm IS NULL OR min_length_mm > 0) AND "
+            "(max_length_mm IS NULL OR max_length_mm > 0)",
+            name="ck_entries_positive_length_ranges",
+        ),
+        CheckConstraint(
+            "min_length_mm IS NULL OR max_length_mm IS NULL OR min_length_mm <= max_length_mm",
+            name="ck_entries_valid_length_bounds",
+        ),
+        CheckConstraint("width_mm IS NULL OR width_mm > 0", name="ck_entries_positive_width"),
+        CheckConstraint("length_mm IS NULL OR length_mm > 0", name="ck_entries_positive_length"),
+        CheckConstraint("thickness_mm IS NULL OR thickness_mm > 0", name="ck_entries_positive_thickness"),
         Index(
-            "uq_chart_entries_chart_id_size_label_lower",
+            "uq_chart_entries_chart_shape_size_lower",
             "chart_id",
+            func.coalesce(func.lower(func.trim(func.cast("shape", Text))), ""),
             func.lower(func.trim(func.cast("size_label", Text))),
             unique=True,
         ),
@@ -155,32 +191,70 @@ class SizingChartEntry(Base):
         String(50),
         nullable=False,
     )
+    shape: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    finger: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    typical_finger: Mapped[Optional[str]] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+    width_mm: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 2),
+        nullable=True,
+    )
+    length_mm: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 2),
+        nullable=True,
+    )
+    min_length_mm: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 2),
+        nullable=True,
+    )
+    max_length_mm: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 2),
+        nullable=True,
+    )
+    thickness_mm: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 2),
+        nullable=True,
+    )
+    is_approximate: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
     thumb_width_mm: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(4, 1),
+        Numeric(6, 2),
         nullable=True,
     )
     index_width_mm: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(4, 1),
+        Numeric(6, 2),
         nullable=True,
     )
     middle_width_mm: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(4, 1),
+        Numeric(6, 2),
         nullable=True,
     )
     ring_width_mm: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(4, 1),
+        Numeric(6, 2),
         nullable=True,
     )
     pinky_width_mm: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(4, 1),
+        Numeric(6, 2),
         nullable=True,
     )
     min_width_mm: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(4, 1),
+        Numeric(6, 2),
         nullable=True,
     )
     max_width_mm: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(4, 1),
+        Numeric(6, 2),
         nullable=True,
     )
     display_order: Mapped[int] = mapped_column(
