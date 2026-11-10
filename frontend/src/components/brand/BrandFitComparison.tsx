@@ -1,14 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   AlertCircle,
+  ChevronDown,
   ExternalLink,
+  Info,
+  RefreshCw,
+  Ruler,
   ShieldCheck,
   Sparkles,
-  ArrowLeftRight,
-  Ruler,
-  Info,
-  CheckCircle2,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { publicBrandRepository } from "@/services/publicBrandRepository";
@@ -19,45 +18,156 @@ import {
   matchLengthOnlyNumberedBrand,
   matchResultsToBrand,
 } from "@/services/brandMatchingService";
-import type { PublicBrandProfile, ChartFormat } from "@/types/brand";
+import type { BrandSizingChart, PublicBrandProfile } from "@/types/brand";
 import type { NailSizeResult } from "@/types";
 
 export interface BrandFitComparisonProps {
   results: NailSizeResult;
   selectedBrandId?: string | null;
   onBrandSelect: (brandId: string | null) => void;
+  sectionRef?: React.RefObject<HTMLDivElement | null>;
+}
+
+const DEFAULT_DOT_PALETTE = ["#ec4899", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"];
+
+/**
+ * Inspect a brand's actual published sizing chart to extract any supported shape-specific charts.
+ * Only brands with >1 distinct shape chart show the conditional Shape dropdown.
+ */
+function getAvailableShapeCharts(chart?: BrandSizingChart): string[] {
+  if (!chart) return [];
+
+  if (chart.format === "shape_range" && chart.shape_ranges && chart.shape_ranges.length > 0) {
+    return Array.from(
+      new Set(chart.shape_ranges.map((sr) => sr.shape?.trim()).filter((s): s is string => Boolean(s)))
+    );
+  }
+
+  if (chart.format === "length_only_numbered") {
+    if (chart.length_numbered_sizes && Object.keys(chart.length_numbered_sizes).length > 0) {
+      return Object.keys(chart.length_numbered_sizes);
+    }
+    if (chart.sizing_chart_entries && chart.sizing_chart_entries.length > 0) {
+      return Array.from(
+        new Set(
+          chart.sizing_chart_entries
+            .filter((e) => e.length_mm != null && e.shape)
+            .map((e) => e.shape!.trim())
+        )
+      );
+    }
+  }
+
+  if (chart.sizing_chart_entries && chart.sizing_chart_entries.length > 0) {
+    return Array.from(
+      new Set(
+        chart.sizing_chart_entries
+          .map((e) => e.shape?.trim())
+          .filter((s): s is string => Boolean(s))
+      )
+    );
+  }
+
+  return [];
+}
+
+function getNailGridClass(count: number): string {
+  if (count <= 2) return "grid-cols-1 sm:grid-cols-2";
+  if (count === 3) return "grid-cols-2 sm:grid-cols-3";
+  if (count === 4) return "grid-cols-2 lg:grid-cols-4";
+  return "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5";
+}
+
+interface NailResultCardProps {
+  fingerLabel: string;
+  dotColor: string;
+  primaryText: string;
+  primaryTone?: "default" | "unavailable";
+  measuredWidthMm?: number;
+  subLabel?: string;
+}
+
+function NailResultCard({
+  fingerLabel,
+  dotColor,
+  primaryText,
+  primaryTone = "default",
+  measuredWidthMm,
+  subLabel,
+}: NailResultCardProps) {
+  return (
+    <div className="flex flex-col items-center justify-between rounded-2xl border border-lavender/70 bg-gradient-to-b from-blush/20 via-card to-lavender/20 p-4 text-center shadow-xs transition-all hover:border-lavender-deep/50">
+      <div className="flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <span
+          className="size-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: dotColor }}
+        />
+        <span>{fingerLabel}</span>
+      </div>
+
+      <div className="my-2.5">
+        <div
+          className={
+            primaryTone === "unavailable"
+              ? "font-display text-lg sm:text-xl font-bold text-amber-700 dark:text-amber-400"
+              : "font-display text-2xl sm:text-3xl font-bold tracking-tight text-primary"
+          }
+        >
+          {primaryText}
+        </div>
+        {subLabel && (
+          <div className="mt-0.5 text-[11px] font-medium text-muted-foreground leading-tight">
+            {subLabel}
+          </div>
+        )}
+      </div>
+
+      <div className="w-full border-t border-lavender/40 pt-2 font-mono text-xs font-semibold text-foreground/80">
+        {typeof measuredWidthMm === "number" && measuredWidthMm > 0
+          ? `≈ ${measuredWidthMm.toFixed(2)} mm`
+          : "Uncalibrated"}
+      </div>
+    </div>
+  );
 }
 
 export function BrandFitComparison({
   results,
   selectedBrandId,
   onBrandSelect,
+  sectionRef,
 }: BrandFitComparisonProps) {
   const [brands, setBrands] = useState<PublicBrandProfile[]>([]);
   const [isLoadingBrands, setIsLoadingBrands] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
 
-  // Full detailed brand profile when a brand is active
   const [activeBrandDetail, setActiveBrandDetail] = useState<PublicBrandProfile | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
-  // Brand-specific secondary selectors:
-  // For shape_range (Glamnetic) and length_only_numbered (The Nailest): selected shape
   const [selectedShape, setSelectedShape] = useState<string>("");
-  // For preset_set (PRESSE): selected preset set (e.g. "recommended", "XS", "S", "M", "L")
   const [selectedPreset, setSelectedPreset] = useState<string>("recommended");
-  // For numbered_size (Joyee): selected tip size (e.g. "all", "0", "1", ..., "9")
-  const [selectedNumberedSize, setSelectedNumberedSize] = useState<string>("all");
+  const [logoFailed, setLogoFailed] = useState(false);
 
-  // Load published brands dynamically from public brand catalog API
+  // Map each detected nail label to its overlay color so cards stay tied to the photo markers
+  const fingerColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const raw = results.measurements || results.leftHand || results.rightHand || [];
+    raw.forEach((item, idx) => {
+      map.set(item.finger, item.colorHex || DEFAULT_DOT_PALETTE[idx % DEFAULT_DOT_PALETTE.length]);
+    });
+    return map;
+  }, [results]);
+
+  const isValidationPassed = !results.validation || Boolean(results.validation.passed);
+  const isCoinDetected = Boolean(results.coin_detected);
+  const canMatchReliableWidths = isValidationPassed && isCoinDetected;
+
   const loadBrands = useCallback(async () => {
     setIsLoadingBrands(true);
     setLoadingError(null);
     try {
       const data = await publicBrandRepository.getPublicBrands();
-      // Filter to brands that have an active sizing chart
-      const activeCharts = data.filter((b) => Boolean(b.sizingChart));
-      setBrands(activeCharts);
+      setBrands(data.filter((b) => Boolean(b.sizingChart)));
     } catch (err) {
       setLoadingError(err instanceof Error ? err.message : "Failed to load brand catalog.");
     } finally {
@@ -69,33 +179,37 @@ export function BrandFitComparison({
     loadBrands();
   }, [loadBrands]);
 
-  // Load detailed brand profile with full chart data when selectedBrandId changes
+  // Reset shape selection & load chart details whenever brand changes
   useEffect(() => {
     let isCurrent = true;
+    setSelectedShape("");
+    setSelectedPreset("recommended");
+    setLogoFailed(false);
+
     if (!selectedBrandId) {
       setActiveBrandDetail(null);
-      setSelectedShape("");
-      setSelectedPreset("recommended");
-      setSelectedNumberedSize("all");
+      setIsLoadingDetail(false);
       return;
     }
+
+    // Use already-loaded public brand catalog data immediately to eliminate round-trip lag
+    const cachedBrand = brands.find(
+      (b) => b.slug === selectedBrandId || b.id === selectedBrandId
+    );
+    if (cachedBrand?.sizingChart) {
+      setActiveBrandDetail(cachedBrand);
+      setIsLoadingDetail(false);
+      return;
+    }
+
+    setActiveBrandDetail(null);
 
     const fetchDetail = async () => {
       setIsLoadingDetail(true);
       try {
         const detail = await publicBrandRepository.getPublicBrandBySlugOrId(selectedBrandId);
-        if (isCurrent && detail) {
+        if (isCurrent) {
           setActiveBrandDetail(detail);
-          // Default selected shape for shape_range and length_only_numbered
-          if (detail.sizingChart?.shape_ranges && detail.sizingChart.shape_ranges.length > 0) {
-            setSelectedShape(detail.sizingChart.shape_ranges[0].shape);
-          } else if (detail.sizingChart?.length_numbered_sizes && Object.keys(detail.sizingChart.length_numbered_sizes).length > 0) {
-            setSelectedShape(Object.keys(detail.sizingChart.length_numbered_sizes)[0]);
-          } else if (detail.shapes && detail.shapes.length > 0) {
-            setSelectedShape(detail.shapes[0]);
-          }
-          setSelectedPreset("recommended");
-          setSelectedNumberedSize("all");
         }
       } catch (err) {
         console.error("Failed to load brand chart details:", err);
@@ -108,40 +222,84 @@ export function BrandFitComparison({
     return () => {
       isCurrent = false;
     };
-  }, [selectedBrandId]);
+  }, [selectedBrandId, brands]);
 
-  // Format Helper
-  const getFormatBadge = (format?: ChartFormat) => {
-    switch (format) {
-      case "preset_set":
-      case "per_size":
-      case "per_size_fingers":
-        return { label: "Preset Sets (XS–L)", color: "bg-lavender/60 text-lavender-deep" };
-      case "numbered_size":
-        return { label: "Numbered Sizes (0–9)", color: "bg-amber-500/15 text-amber-700 dark:text-amber-400" };
-      case "shape_range":
-        return { label: "Shape-Based Dimension Ranges", color: "bg-blue-500/15 text-blue-700 dark:text-blue-400" };
-      case "length_only_numbered":
-        return { label: "Length-Only Numbered (#0–#9)", color: "bg-purple-500/15 text-purple-700 dark:text-purple-400" };
-      case "width_ranges":
-        return { label: "Width Range Specifications", color: "bg-secondary text-secondary-foreground" };
-      default:
-        return { label: "Standard Sizing", color: "bg-muted text-muted-foreground" };
+  const isBrandDetailReady =
+    Boolean(selectedBrandId) &&
+    Boolean(activeBrandDetail) &&
+    (activeBrandDetail?.slug === selectedBrandId || activeBrandDetail?.id === selectedBrandId);
+
+  const chart = isBrandDetailReady ? activeBrandDetail?.sizingChart : undefined;
+  const chartFormat =
+    chart?.format || (chart?.ranges && chart.ranges.length > 0 ? "width_ranges" : "preset_set");
+
+  // Inspect actual available shape-specific charts on the selected brand
+  const availableShapes = useMemo(() => getAvailableShapeCharts(chart), [chart]);
+  const hasMultipleShapeCharts = availableShapes.length > 1;
+  const activeShapeForCalculation = hasMultipleShapeCharts
+    ? selectedShape
+    : availableShapes[0] || "";
+
+  // Wait for shape selection when brand has multiple shape-specific charts
+  const isWaitingForShapeSelection =
+    isBrandDetailReady && Boolean(chart) && hasMultipleShapeCharts && !selectedShape;
+  const isReadyToShowResults =
+    isBrandDetailReady && !isLoadingDetail && (!hasMultipleShapeCharts || Boolean(selectedShape));
+
+  // Filter raw entries by shape ONLY if a generic format carries per-shape entries
+  const scopedChart = useMemo(() => {
+    if (!chart) return undefined;
+    if (
+      !activeShapeForCalculation ||
+      !chart.sizing_chart_entries ||
+      chartFormat === "shape_range" ||
+      chartFormat === "length_only_numbered"
+    ) {
+      return chart;
     }
-  };
+    const matchingEntries = chart.sizing_chart_entries.filter(
+      (e) => e.shape?.trim() === activeShapeForCalculation
+    );
+    if (matchingEntries.length === 0) return chart;
 
-  // Match calculations based on chart format
-  const chart = activeBrandDetail?.sizingChart;
-  const chartFormat = chart?.format || (chart?.ranges && chart.ranges.length > 0 ? "width_ranges" : "preset_set");
+    if (chartFormat === "numbered_size") {
+      return {
+        ...chart,
+        numbered_sizes: matchingEntries.map((e) => ({
+          size: e.size_label,
+          width_mm: e.width_mm,
+          min_width_mm: e.min_width_mm,
+          max_width_mm: e.max_width_mm,
+          is_approximate: e.is_approximate,
+          typical_finger: e.typical_finger,
+        })),
+      };
+    }
+    if (chartFormat === "width_ranges") {
+      return {
+        ...chart,
+        ranges: matchingEntries
+          .filter((e) => e.min_width_mm != null && e.max_width_mm != null)
+          .map((e) => ({
+            sizeLabel: e.size_label,
+            minMm: Number(e.min_width_mm),
+            maxMm: Number(e.max_width_mm),
+          })),
+      };
+    }
+    return chart;
+  }, [chart, chartFormat, activeShapeForCalculation]);
 
-  // Format A: Preset Sets (PRESSE)
+  // Format A: Preset Sets (PRESSE, Aura Luxury, LuxeTip)
   const presetMatch = useMemo(() => {
-    if (chartFormat !== "preset_set" && chartFormat !== "per_size" && chartFormat !== "per_size_fingers") return null;
-    if (!chart?.sizes || Object.keys(chart.sizes).length === 0) return null;
-    return matchPresetSetBrand(results, chart.sizes);
-  }, [chartFormat, chart, results]);
+    if (!isReadyToShowResults || !scopedChart) return null;
+    if (chartFormat !== "preset_set" && chartFormat !== "per_size" && chartFormat !== "per_size_fingers") {
+      return null;
+    }
+    if (!scopedChart.sizes || Object.keys(scopedChart.sizes).length === 0) return null;
+    return matchPresetSetBrand(results, scopedChart.sizes);
+  }, [isReadyToShowResults, chartFormat, scopedChart, results]);
 
-  // Active preset comparison item based on user selection in dropdown 2
   const activePresetComparison = useMemo(() => {
     if (!presetMatch) return null;
     if (selectedPreset === "recommended" || !selectedPreset) {
@@ -171,89 +329,69 @@ export function BrandFitComparison({
 
   // Format B: Numbered Sizes (Joyee)
   const numberedMatch = useMemo(() => {
-    if (chartFormat !== "numbered_size") return null;
-    if (!chart?.numbered_sizes || chart.numbered_sizes.length === 0) return null;
-    return matchNumberedSizeBrand(results, chart.numbered_sizes);
-  }, [chartFormat, chart, results]);
+    if (!isReadyToShowResults || !scopedChart || chartFormat !== "numbered_size") return null;
+    if (!scopedChart.numbered_sizes || scopedChart.numbered_sizes.length === 0) return null;
+    return matchNumberedSizeBrand(results, scopedChart.numbered_sizes);
+  }, [isReadyToShowResults, chartFormat, scopedChart, results]);
 
-  // Filtered or full numbered matches for display
-  const displayedNumberedMatches = useMemo(() => {
-    if (!numberedMatch) return [];
-    if (selectedNumberedSize === "all" || !selectedNumberedSize) {
-      return numberedMatch.fingerMatches;
-    }
-    const filtered = numberedMatch.fingerMatches.filter(
-      (m) => String(m.size) === String(selectedNumberedSize)
-    );
-    return filtered.length > 0 ? filtered : numberedMatch.fingerMatches;
-  }, [numberedMatch, selectedNumberedSize]);
-
-  // Format C: Shape-Based Ranges (Glamnetic)
+  // Format C: Shape-Based Bounds (Glamnetic)
   const shapeMatch = useMemo(() => {
-    if (chartFormat !== "shape_range") return null;
-    if (!chart?.shape_ranges || chart.shape_ranges.length === 0) return null;
-    return matchShapeRangeBrand(results, chart.shape_ranges, selectedShape);
-  }, [chartFormat, chart, selectedShape, results]);
+    if (!isReadyToShowResults || !chart || chartFormat !== "shape_range") return null;
+    if (!chart.shape_ranges || chart.shape_ranges.length === 0) return null;
+    return matchShapeRangeBrand(results, chart.shape_ranges, activeShapeForCalculation);
+  }, [isReadyToShowResults, chartFormat, chart, activeShapeForCalculation, results]);
 
-  // Format D: Legacy / Width Ranges
+  // Format D: Millimeter Width Ranges (Velvet Claws)
   const widthRangeMatch = useMemo(() => {
-    if (chartFormat !== "width_ranges") return null;
-    if (!activeBrandDetail) return null;
-    return matchResultsToBrand(results, activeBrandDetail as any);
-  }, [chartFormat, activeBrandDetail, results]);
+    if (!isReadyToShowResults || !activeBrandDetail || !scopedChart || chartFormat !== "width_ranges") {
+      return null;
+    }
+    return matchResultsToBrand(results, { ...activeBrandDetail, sizingChart: scopedChart } as any);
+  }, [isReadyToShowResults, chartFormat, activeBrandDetail, scopedChart, results]);
 
-  // Format E: Length-Only Numbered (The Nailest)
+  // Format E: Length-Only Numbered (The Nailest — no width specs)
   const lengthOnlyMatch = useMemo(() => {
-    if (chartFormat !== "length_only_numbered") return null;
-    if (!chart) return null;
-    return matchLengthOnlyNumberedBrand(results, chart, selectedShape);
-  }, [chartFormat, chart, selectedShape, results]);
+    if (!isReadyToShowResults || !chart || chartFormat !== "length_only_numbered") return null;
+    return matchLengthOnlyNumberedBrand(results, chart, activeShapeForCalculation);
+  }, [isReadyToShowResults, chartFormat, chart, activeShapeForCalculation, results]);
+
+  const rawDetections = results.measurements || results.leftHand || results.rightHand || [];
+
+  const resultHeading = activeBrandDetail
+    ? activeShapeForCalculation
+      ? `${activeBrandDetail.name} — ${activeShapeForCalculation}`
+      : activeBrandDetail.name
+    : "Brand Sizing Result";
 
   return (
-    <div className="space-y-6">
+    <div ref={sectionRef} className="space-y-6">
       {/* ==================================================================== */}
-      {/* SECTION C — BRAND SELECTION CONTROLS (DROPDOWNS)                     */}
+      {/* SELECT BRAND & CONDITIONAL SELECT SHAPE CARD                          */}
       {/* ==================================================================== */}
-      <div className="rounded-2xl border border-border/80 bg-card p-6 sm:p-7 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-border/60">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Sparkles className="size-3.5" />
-              </span>
-              <h3 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-                Find Your Brand Size
-              </h3>
-            </div>
-            <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
-              Select your press-on nail brand to explore its available sizing information.
-            </p>
+      <div className="rounded-3xl border border-lavender/70 bg-gradient-to-br from-card via-card to-blush/20 p-5 sm:p-8 shadow-soft">
+        <div className="mb-5">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex size-7 items-center justify-center rounded-xl bg-lavender/60 text-primary">
+              <Sparkles className="size-4" />
+            </span>
+            <h3 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              Find Your Brand Size
+            </h3>
           </div>
-
-          {selectedBrandId && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onBrandSelect(null)}
-              className="gap-1.5 text-xs font-semibold self-start sm:self-auto shrink-0 shadow-xs"
-            >
-              <ArrowLeftRight className="size-3.5 text-primary" />
-              Compare Another Brand
-            </Button>
-          )}
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+            Select a press-on nail brand{hasMultipleShapeCharts ? " and nail shape" : ""} to match your measured nail widths.
+          </p>
         </div>
 
-        {/* Loading published brands state */}
         {isLoadingBrands && (
-          <div className="py-6 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+          <div className="py-5 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
             <RefreshCw className="size-3.5 animate-spin text-primary" />
-            <span>Loading published brand sizing charts...</span>
+            <span>Loading verified brand charts...</span>
           </div>
         )}
 
-        {/* Loading error state */}
         {!isLoadingBrands && loadingError && (
-          <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-center">
+          <div className="rounded-2xl border border-destructive/20 bg-destructive/10 p-4 text-center">
             <AlertCircle className="size-5 text-destructive mx-auto mb-1.5" />
             <p className="text-xs font-semibold text-destructive">{loadingError}</p>
             <Button onClick={loadBrands} variant="outline" size="sm" className="mt-3 gap-1.5 text-xs">
@@ -263,165 +401,65 @@ export function BrandFitComparison({
           </div>
         )}
 
-        {/* Dropdowns Interface */}
         {!isLoadingBrands && !loadingError && (
-          <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* First Dropdown: Select Brand */}
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              hasMultipleShapeCharts ? "sm:grid-cols-2" : "sm:grid-cols-1 sm:max-w-md"
+            }`}
+          >
+            {/* Brand Dropdown */}
             <div className="space-y-1.5">
               <label
                 htmlFor="brand-select-dropdown"
-                className="text-xs font-semibold text-foreground flex items-center justify-between"
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block"
               >
-                <span>Select Brand</span>
-                {selectedBrandId && (
-                  <span className="text-[11px] font-normal text-muted-foreground">
-                    Step 1 of 2
-                  </span>
-                )}
+                Select Brand
               </label>
-              <select
-                id="brand-select-dropdown"
-                value={selectedBrandId || ""}
-                onChange={(e) => onBrandSelect(e.target.value || null)}
-                className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-medium text-foreground shadow-xs transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-              >
-                <option value="">-- Choose a brand --</option>
-                {brands.map((brand) => (
-                  <option key={brand.id} value={brand.slug}>
-                    {brand.name} {brand.is_official || brand.sizingChart?.is_official ? "(Official Chart)" : ""}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="brand-select-dropdown"
+                  value={selectedBrandId || ""}
+                  onChange={(e) => {
+                    setSelectedShape("");
+                    onBrandSelect(e.target.value || null);
+                  }}
+                  className="w-full appearance-none rounded-xl border border-lavender-deep/35 bg-background/95 px-4 py-3 pr-10 text-sm font-semibold text-foreground shadow-xs transition-all hover:border-lavender-deep/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                >
+                  <option value="">Select Brand</option>
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.slug}>
+                      {brand.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-primary/70" />
+              </div>
             </div>
 
-            {/* Second Dropdown: Dynamic Selector conditioned on active brand format */}
-            {selectedBrandId && activeBrandDetail ? (
+            {/* Conditional Shape Dropdown — ONLY shown if selected brand has multiple shape-specific charts */}
+            {hasMultipleShapeCharts && (
               <div className="space-y-1.5 animate-in fade-in duration-200">
-                {/* 1. Glamnetic (shape_range): Select Nail Shape / Collection */}
-                {chartFormat === "shape_range" && chart?.shape_ranges && chart.shape_ranges.length > 0 && (
-                  <>
-                    <label htmlFor="glamnetic-shape-dropdown" className="text-xs font-semibold text-foreground flex items-center justify-between">
-                      <span>Select Nail Shape / Collection</span>
-                      <span className="text-[11px] font-normal text-primary">Step 2 of 2</span>
-                    </label>
-                    <select
-                      id="glamnetic-shape-dropdown"
-                      value={selectedShape}
-                      onChange={(e) => setSelectedShape(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-medium text-foreground shadow-xs transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                    >
-                      {chart.shape_ranges.map((sr) => {
-                        const dimInfo = sr.length_min_mm && sr.length_max_mm
-                          ? ` (${sr.length_min_mm}–${sr.length_max_mm}mm L)`
-                          : "";
-                        return (
-                          <option key={sr.shape} value={sr.shape}>
-                            {sr.shape}{dimInfo}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </>
-                )}
-
-                {/* 2. Joyee (numbered_size): Select Numbered Size */}
-                {chartFormat === "numbered_size" && chart?.numbered_sizes && (
-                  <>
-                    <label htmlFor="joyee-size-dropdown" className="text-xs font-semibold text-foreground flex items-center justify-between">
-                      <span>Select Numbered Size</span>
-                      <span className="text-[11px] font-normal text-amber-700 dark:text-amber-400">Step 2 of 2</span>
-                    </label>
-                    <select
-                      id="joyee-size-dropdown"
-                      value={selectedNumberedSize}
-                      onChange={(e) => setSelectedNumberedSize(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-medium text-foreground shadow-xs transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                    >
-                      <option value="all">All Sizes (#0–#9 Overview)</option>
-                      {chart.numbered_sizes.map((ns) => {
-                        const widthLabel = typeof ns.width_mm === "number"
-                          ? `${ns.width_mm}mm`
-                          : ns.min_width_mm && ns.max_width_mm
-                          ? `${ns.min_width_mm}–${ns.max_width_mm}mm`
-                          : "spec";
-                        return (
-                          <option key={ns.size} value={String(ns.size)}>
-                            Size #{ns.size} ({widthLabel}
-                            {ns.typical_finger ? ` · ${ns.typical_finger}` : ""})
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </>
-                )}
-
-                {/* 3. PRESSE (preset_set): Select Preset Size */}
-                {(chartFormat === "preset_set" || chartFormat === "per_size" || chartFormat === "per_size_fingers") && chart?.sizes && (
-                  <>
-                    <label htmlFor="presse-preset-dropdown" className="text-xs font-semibold text-foreground flex items-center justify-between">
-                      <span>Select Preset Size</span>
-                      <span className="text-[11px] font-normal text-lavender-deep">Step 2 of 2</span>
-                    </label>
-                    <select
-                      id="presse-preset-dropdown"
-                      value={selectedPreset}
-                      onChange={(e) => setSelectedPreset(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-medium text-foreground shadow-xs transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                    >
-                      <option value="recommended">
-                        Recommended Preset ({presetMatch?.recommendedSet ? `Set ${presetMatch.recommendedSet}` : "Auto-matched"})
+                <label
+                  htmlFor="shape-select-dropdown"
+                  className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block"
+                >
+                  Select Shape
+                </label>
+                <div className="relative">
+                  <select
+                    id="shape-select-dropdown"
+                    value={selectedShape}
+                    onChange={(e) => setSelectedShape(e.target.value)}
+                    className="w-full appearance-none rounded-xl border border-lavender-deep/35 bg-background/95 px-4 py-3 pr-10 text-sm font-semibold text-foreground shadow-xs transition-all hover:border-lavender-deep/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                  >
+                    <option value="">Select Shape</option>
+                    {availableShapes.map((shapeName) => (
+                      <option key={shapeName} value={shapeName}>
+                        {shapeName}
                       </option>
-                      {Object.keys(chart.sizes).map((sz) => (
-                        <option key={sz} value={sz}>
-                          Preset Set: {sz}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
-
-                {/* 4. The Nailest (length_only_numbered): Select Nail Shape */}
-                {chartFormat === "length_only_numbered" && lengthOnlyMatch && (
-                  <>
-                    <label htmlFor="nailest-shape-dropdown" className="text-xs font-semibold text-foreground flex items-center justify-between">
-                      <span>Select Nail Shape</span>
-                      <span className="text-[11px] font-normal text-purple-700 dark:text-purple-400">Step 2 of 2</span>
-                    </label>
-                    <select
-                      id="nailest-shape-dropdown"
-                      value={selectedShape || lengthOnlyMatch.selectedShape}
-                      onChange={(e) => setSelectedShape(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-medium text-foreground shadow-xs transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                    >
-                      {lengthOnlyMatch.availableShapes.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
-
-                {/* 5. Width Ranges fallback */}
-                {chartFormat === "width_ranges" && chart?.ranges && (
-                  <>
-                    <label htmlFor="width-range-fallback" className="text-xs font-semibold text-foreground">
-                      Size Bracket
-                    </label>
-                    <select
-                      id="width-range-fallback"
-                      disabled
-                      className="w-full rounded-xl border border-border bg-muted/30 px-3.5 py-2.5 text-sm font-medium text-muted-foreground shadow-xs cursor-default"
-                    >
-                      <option>All Size Range Brackets ({chart.ranges.length} Brackets)</option>
-                    </select>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="hidden sm:flex flex-col justify-end">
-                <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-3.5 py-2.5 text-xs text-muted-foreground text-center">
-                  Select a brand to view shape or preset options
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-primary/70" />
                 </div>
               </div>
             )}
@@ -429,607 +467,452 @@ export function BrandFitComparison({
         )}
       </div>
 
-      {/* ==================================================================== */}
-      {/* EMPTY STATE: WHEN NO BRAND IS SELECTED                               */}
-      {/* ==================================================================== */}
+      {/* Prompt to select brand when none chosen */}
       {!selectedBrandId && !isLoadingBrands && (
-        <div className="rounded-2xl border border-dashed border-border bg-card/60 p-8 sm:p-10 text-center">
-          <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-3">
-            <Ruler className="size-6" />
+        <div className="rounded-3xl border border-dashed border-lavender/80 bg-card/70 p-8 text-center">
+          <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-2xl bg-lavender/45 text-primary">
+            <Ruler className="size-5" />
           </div>
-          <h4 className="font-display text-lg font-bold text-foreground">
-            No Brand Selected
-          </h4>
-          <p className="mt-1 text-xs sm:text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-            Choose a press-on nail brand from the dropdown above to view official size matching, tip dimensions, and fit analysis tailored to your measurements.
+          <p className="font-display text-xl font-bold text-foreground">
+            Choose a Brand to See Recommended Sizes
+          </p>
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
+            Select a brand from the dropdown above to match your calibrated millimeter widths against their sizing chart.
+          </p>
+        </div>
+      )}
+
+      {/* Loading detail state */}
+      {selectedBrandId && isLoadingDetail && (
+        <div className="rounded-3xl border border-lavender/60 bg-card p-10 text-center shadow-xs">
+          <RefreshCw className="size-6 animate-spin text-primary mx-auto mb-2" />
+          <p className="text-xs text-muted-foreground">Loading brand sizing chart...</p>
+        </div>
+      )}
+
+      {/* Wait for shape selection before showing recommendations on multi-shape brands */}
+      {isWaitingForShapeSelection && (
+        <div className="rounded-3xl border border-lavender/80 bg-lavender/15 p-8 text-center animate-in fade-in duration-200">
+          <p className="font-display text-xl sm:text-2xl font-bold text-foreground">
+            Select a Shape for {activeBrandDetail?.name}
+          </p>
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
+            {activeBrandDetail?.name} uses shape-specific dimensions across {availableShapes.length} shapes. Choose a shape above to view your matched results.
           </p>
         </div>
       )}
 
       {/* ==================================================================== */}
-      {/* SECTION D — BRAND SIZING RESULT PANEL                                */}
+      {/* BRAND-SPECIFIC RESULT CARD                                           */}
       {/* ==================================================================== */}
-      {selectedBrandId && (
-        <div className="rounded-2xl border border-border/80 bg-card p-6 sm:p-8 shadow-xs space-y-6">
-          {/* Brand Result Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-border/70">
+      {selectedBrandId && isReadyToShowResults && (
+        <div className="rounded-3xl border border-lavender/70 bg-card p-5 sm:p-8 shadow-soft space-y-6 animate-in fade-in duration-200">
+          {/* Result Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-lavender/50">
             <div className="flex items-center gap-3.5">
-              {activeBrandDetail?.logo_url ? (
+              {activeBrandDetail?.logo_url && !logoFailed ? (
                 <img
                   src={activeBrandDetail.logo_url}
                   alt={`${activeBrandDetail.name} logo`}
-                  className="size-13 rounded-2xl object-contain border border-border bg-background p-1.5 shadow-xs shrink-0"
+                  onError={() => setLogoFailed(true)}
+                  className="size-12 rounded-2xl object-contain border border-lavender/60 bg-background p-1.5 shadow-xs shrink-0"
                 />
               ) : (
-                <div className="flex size-13 items-center justify-center rounded-2xl bg-primary/10 border border-border font-bold text-primary text-xl shrink-0">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-lavender/50 border border-lavender font-display font-bold text-primary text-xl shrink-0">
                   {activeBrandDetail?.name.charAt(0) || "B"}
                 </div>
               )}
+
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-display text-xl sm:text-2xl font-bold text-foreground">
-                    {activeBrandDetail?.name || "Brand"} Sizing Result
-                  </h3>
+                  <h4 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
+                    {resultHeading}
+                  </h4>
                   {(activeBrandDetail?.is_official || chart?.is_official) && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
-                      <ShieldCheck className="size-3 text-emerald-600" />
-                      Official Brand Chart
-                    </span>
-                  )}
-                  {chartFormat && (
-                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getFormatBadge(chartFormat).color}`}>
-                      {getFormatBadge(chartFormat).label}
+                    <span className="inline-flex items-center gap-1 rounded-full bg-mint/50 px-2.5 py-0.5 text-[10px] font-bold text-foreground border border-lavender/40">
+                      <ShieldCheck className="size-3 text-emerald-700" />
+                      Official Chart
                     </span>
                   )}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-                  <span>Chart: {chart?.chartName || "Standard Guide"}</span>
-                  <span>•</span>
-                  <span>Unit: Millimeters (mm)</span>
-                  {selectedShape && (
-                    <>
-                      <span>•</span>
-                      <span className="font-semibold text-foreground">Shape: {selectedShape}</span>
-                    </>
-                  )}
-                  {selectedPreset && selectedPreset !== "recommended" && (
-                    <>
-                      <span>•</span>
-                      <span className="font-semibold text-foreground">Preset: {selectedPreset}</span>
-                    </>
-                  )}
-                </p>
+                {activePresetComparison && (
+                  <p className="mt-1 text-xs font-medium text-muted-foreground">
+                    {activePresetComparison.isAutoRecommended
+                      ? `Closest overall preset fit: Set ${activePresetComparison.setKey}`
+                      : `Comparing Preset Set ${activePresetComparison.setKey}`}
+                  </p>
+                )}
               </div>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onBrandSelect(null)}
-              className="gap-1.5 text-xs font-semibold shrink-0 shadow-xs"
-            >
-              <ArrowLeftRight className="size-3.5 text-primary" />
-              Compare Another Brand
-            </Button>
+            {/* Optional quick set pills ONLY for Preset Set brands (e.g. PRESSE XS/S/M/L) */}
+            {presetMatch && activePresetComparison && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-semibold text-muted-foreground mr-1">
+                  Compare Set:
+                </span>
+                {presetMatch.availableSets.map((setKey) => (
+                  <button
+                    key={setKey}
+                    type="button"
+                    onClick={() => setSelectedPreset(setKey)}
+                    className={`inline-flex h-8 min-w-8 px-2.5 items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      setKey === activePresetComparison.setKey
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "bg-lavender/25 text-foreground border border-lavender/60 hover:bg-lavender/50"
+                    }`}
+                    title={
+                      setKey === presetMatch.recommendedSet
+                        ? `Preset ${setKey} (Closest overall match)`
+                        : `Switch to Preset ${setKey}`
+                    }
+                  >
+                    {setKey}
+                    {setKey === presetMatch.recommendedSet ? " ★" : ""}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Loading Detail State */}
-          {isLoadingDetail && (
-            <div className="py-12 text-center">
-              <RefreshCw className="size-6 animate-spin text-primary mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground">Calculating brand compatibility...</p>
+          {/* Uncalibrated / Photo Validation Warning */}
+          {!canMatchReliableWidths && chart && chartFormat !== "length_only_numbered" && (
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-900 dark:text-amber-200">
+              <AlertCircle className="size-4 shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <p className="font-semibold">
+                  Verified calibration unavailable for brand size matching
+                </p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {!isCoinDetected
+                    ? "The ₹10 reference coin could not be verified, so reliable brand size recommendations are withheld."
+                    : results.validation?.primaryError ||
+                      "Photo quality validation did not pass cleanly. Retake photo with clear overhead lighting to unlock exact size matching."}
+                </p>
+              </div>
             </div>
           )}
 
-          {/* No Chart Available / Graceful Handling */}
-          {!isLoadingDetail && !chart && (
-            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 text-center space-y-3">
+          {/* No chart defined */}
+          {!chart && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 text-center space-y-2">
               <AlertCircle className="size-6 text-amber-600 mx-auto" />
-              <h4 className="font-display text-lg font-bold text-foreground">
+              <p className="font-display text-lg font-bold text-foreground">
                 No Published Sizing Chart Available
-              </h4>
-              <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                No reliable brand-specific sizing chart is currently published for this studio. You can use your universal calibrated millimeter measurements to check fit manually with the brand.
               </p>
-              <Button onClick={() => onBrandSelect(null)} variant="outline" size="sm" className="mt-2">
-                Choose a Different Brand
-              </Button>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                Reliable width-based matching is unavailable for this brand.
+              </p>
             </div>
           )}
 
-          {/* ================================================================= */}
-          {/* FORMAT A: PRESET SIZE SET (e.g. PRESSE: XS, S, M, L)              */}
-          {/* ================================================================= */}
-          {!isLoadingDetail && chart && presetMatch && activePresetComparison && (
-            <div className="space-y-6">
-              {/* Highlight Recommendation Card */}
-              <div className="rounded-2xl border border-lavender-deep/30 bg-lavender/25 p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-lavender-deep">
-                    {activePresetComparison.isAutoRecommended ? "Recommended Preset Fit" : "Selected Preset Fit"}
+          {/* ---------------------------------------------------------------- */}
+          {/* RESULT VIEW 1: NUMBERED SIZES (e.g. Joyee #0–#9)                 */}
+          {/* ---------------------------------------------------------------- */}
+          {chart && numberedMatch && (
+            <div className="space-y-4">
+              {numberedMatch.fingerMatches.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">
+                  No detected nails available to match.
+                </p>
+              ) : (
+                <div className={`grid gap-3 sm:gap-4 ${getNailGridClass(numberedMatch.fingerMatches.length)}`}>
+                  {numberedMatch.fingerMatches.map((m, idx) => {
+                    const dotColor =
+                      fingerColorMap.get(m.finger) || DEFAULT_DOT_PALETTE[idx % DEFAULT_DOT_PALETTE.length];
+                    const isAvailable =
+                      canMatchReliableWidths && m.fitStatus !== "out_of_range" && m.size !== "—";
+
+                    return (
+                      <NailResultCard
+                        key={`${m.finger}-${idx}`}
+                        fingerLabel={m.finger}
+                        dotColor={dotColor}
+                        primaryText={isAvailable ? `Size ${m.size}` : "Unavailable"}
+                        primaryTone={isAvailable ? "default" : "unavailable"}
+                        measuredWidthMm={m.measuredWidthMm}
+                        subLabel={
+                          isAvailable
+                            ? `Spec: ${m.matchedWidthDisplay}`
+                            : !canMatchReliableWidths
+                              ? "Needs calibration"
+                              : "Outside chart range"
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {numberedMatch.disclaimer}
+              </p>
+            </div>
+          )}
+
+          {/* ---------------------------------------------------------------- */}
+          {/* RESULT VIEW 2: WIDTH RANGES (e.g. Velvet Claws)                  */}
+          {/* ---------------------------------------------------------------- */}
+          {chart && widthRangeMatch && (
+            <div className="space-y-4">
+              {widthRangeMatch.fingerFits.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">
+                  No detected nails available to match.
+                </p>
+              ) : (
+                <div className={`grid gap-3 sm:gap-4 ${getNailGridClass(widthRangeMatch.fingerFits.length)}`}>
+                  {widthRangeMatch.fingerFits.map((fit, idx) => {
+                    const dotColor =
+                      fit.colorHex ||
+                      fingerColorMap.get(fit.finger) ||
+                      DEFAULT_DOT_PALETTE[idx % DEFAULT_DOT_PALETTE.length];
+                    const isAvailable =
+                      canMatchReliableWidths &&
+                      (fit.fitStatus === "exact" || fit.fitStatus === "recommended");
+
+                    return (
+                      <NailResultCard
+                        key={`${fit.finger}-${idx}`}
+                        fingerLabel={fit.finger}
+                        dotColor={dotColor}
+                        primaryText={isAvailable ? `Size ${fit.recommendedSize}` : "Unavailable"}
+                        primaryTone={isAvailable ? "default" : "unavailable"}
+                        measuredWidthMm={fit.measuredWidthMm}
+                        subLabel={
+                          isAvailable && fit.chartRange
+                            ? `${fit.chartRange.minMm}–${fit.chartRange.maxMm} mm`
+                            : fit.recommendedSize
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {widthRangeMatch.ruleExplanation}
+              </p>
+            </div>
+          )}
+
+          {/* ---------------------------------------------------------------- */}
+          {/* RESULT VIEW 3: PRESET SETS (e.g. PRESSE XS–L)                    */}
+          {/* ---------------------------------------------------------------- */}
+          {chart && presetMatch && activePresetComparison && (
+            <div className="space-y-4">
+              {activePresetComparison.items.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">
+                  No detected nails available to match.
+                </p>
+              ) : (
+                <div className={`grid gap-3 sm:gap-4 ${getNailGridClass(activePresetComparison.items.length)}`}>
+                  {activePresetComparison.items.map((item, idx) => {
+                    const dotColor =
+                      fingerColorMap.get(item.finger) ||
+                      DEFAULT_DOT_PALETTE[idx % DEFAULT_DOT_PALETTE.length];
+                    const isAvailable =
+                      canMatchReliableWidths &&
+                      typeof item.measuredWidthMm === "number" &&
+                      typeof item.presetWidthMm === "number";
+
+                    return (
+                      <NailResultCard
+                        key={`${item.finger}-${idx}`}
+                        fingerLabel={item.finger}
+                        dotColor={dotColor}
+                        primaryText={isAvailable ? `Set ${activePresetComparison.setKey}` : "Unavailable"}
+                        primaryTone={isAvailable ? "default" : "unavailable"}
+                        measuredWidthMm={item.measuredWidthMm}
+                        subLabel={
+                          isAvailable && item.presetWidthMm !== undefined
+                            ? `Tip: ${item.presetWidthMm} mm (${item.diffMm !== undefined && item.diffMm >= 0 ? "+" : ""}${item.diffMm?.toFixed(1)} mm)`
+                            : !canMatchReliableWidths
+                              ? "Needs calibration"
+                              : "No preset slot"
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {presetMatch.disclaimer}
+              </p>
+            </div>
+          )}
+
+          {/* ---------------------------------------------------------------- */}
+          {/* RESULT VIEW 4: SHAPE SILHOUETTE BOUNDS (e.g. Glamnetic)          */}
+          {/* ---------------------------------------------------------------- */}
+          {chart && shapeMatch && (
+            <div className="space-y-5">
+              {/* Concise Silhouette Bounds Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="rounded-2xl border border-lavender/50 bg-lavender/15 px-4 py-3">
+                  <span className="text-[11px] text-muted-foreground block">Shape Width Span</span>
+                  <span className="font-mono font-bold text-foreground text-sm">
+                    {shapeMatch.widthRangeDisplay}
                   </span>
-                  <h4 className="mt-1 font-display text-2xl sm:text-3xl font-bold text-foreground">
-                    Size Set: {activePresetComparison.setKey}
-                  </h4>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {activePresetComparison.isAutoRecommended
-                      ? `Closest match across your finger widths (Total deviation: ±${activePresetComparison.totalDiff.toFixed(1)} mm).`
-                      : `Comparison against Preset Set ${activePresetComparison.setKey} (Total deviation: ±${activePresetComparison.totalDiff.toFixed(1)} mm).`}
+                </div>
+                <div className="rounded-2xl border border-lavender/50 bg-blush/15 px-4 py-3">
+                  <span className="text-[11px] text-muted-foreground block">Shape Length Span</span>
+                  <span className="font-mono font-bold text-foreground text-sm">
+                    {shapeMatch.lengthRangeDisplay}
+                  </span>
+                </div>
+                <div className="rounded-2xl border border-lavender/50 bg-lavender/15 px-4 py-3">
+                  <span className="text-[11px] text-muted-foreground block">Tip Thickness</span>
+                  <span className="font-mono font-bold text-foreground text-sm">
+                    {shapeMatch.thicknessDisplay}
+                  </span>
+                </div>
+              </div>
+
+              {/* Honest explanation that shape bounds do not specify individual numbered tips */}
+              <div className="flex items-start gap-2.5 rounded-2xl border border-lavender/60 bg-blush/15 p-3.5 text-xs text-foreground">
+                <Info className="size-4 shrink-0 mt-0.5 text-primary" />
+                <p className="leading-relaxed text-muted-foreground">
+                  <strong className="text-foreground">Silhouette Span Compatibility:</strong>{" "}
+                  {shapeMatch.disclaimer}
+                </p>
+              </div>
+
+              {shapeMatch.fingerComparisons.length > 0 && (
+                <div className={`grid gap-3 sm:gap-4 ${getNailGridClass(shapeMatch.fingerComparisons.length)}`}>
+                  {shapeMatch.fingerComparisons.map((fc, idx) => {
+                    const dotColor =
+                      fingerColorMap.get(fc.finger) ||
+                      DEFAULT_DOT_PALETTE[idx % DEFAULT_DOT_PALETTE.length];
+                    const hasMeasurement =
+                      canMatchReliableWidths && typeof fc.measuredWidthMm === "number";
+
+                    return (
+                      <NailResultCard
+                        key={`${fc.finger}-${idx}`}
+                        fingerLabel={fc.finger}
+                        dotColor={dotColor}
+                        primaryText={
+                          !hasMeasurement
+                            ? "Unavailable"
+                            : fc.isWithinRange
+                              ? "Fits Span"
+                              : "Out of Span"
+                        }
+                        primaryTone={!hasMeasurement || !fc.isWithinRange ? "unavailable" : "default"}
+                        measuredWidthMm={fc.measuredWidthMm}
+                        subLabel={
+                          !hasMeasurement
+                            ? "Needs calibration"
+                            : fc.isWithinRange
+                              ? `Within ${shapeMatch.widthRangeDisplay}`
+                              : fc.statusText.split("(")[0].trim()
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ---------------------------------------------------------------- */}
+          {/* RESULT VIEW 5: NO WIDTH SPECS / LENGTH-ONLY (e.g. The Nailest)   */}
+          {/* ---------------------------------------------------------------- */}
+          {chart && lengthOnlyMatch && (
+            <div className="space-y-5">
+              {/* Explicit Missing Width Explanation — never generate fake sizes */}
+              <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-foreground">
+                <AlertCircle className="size-4 shrink-0 mt-0.5 text-amber-600" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-amber-900 dark:text-amber-200">
+                    Reliable width-based size matching is unavailable for {activeBrandDetail?.name}
+                  </p>
+                  <p className="text-muted-foreground leading-relaxed">
+                    {lengthOnlyMatch.disclaimer}
                   </p>
                 </div>
+              </div>
 
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-semibold text-muted-foreground mr-1">Available Sets:</span>
-                  {presetMatch.availableSets.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setSelectedPreset(s)}
-                      className={`inline-flex size-8 items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        s === activePresetComparison.setKey
-                          ? "bg-lavender-deep text-white shadow-soft ring-2 ring-lavender-deep/40"
-                          : "bg-background text-foreground border border-border hover:border-lavender-deep/50"
-                      }`}
-                      title={`Switch to Preset Set ${s}`}
+              {/* Detected Nails preserved honestly as Width Match Unavailable */}
+              {rawDetections.length > 0 && (
+                <div className={`grid gap-3 sm:gap-4 ${getNailGridClass(rawDetections.length)}`}>
+                  {rawDetections.map((item, idx) => {
+                    const dotColor =
+                      item.colorHex ||
+                      fingerColorMap.get(item.finger) ||
+                      DEFAULT_DOT_PALETTE[idx % DEFAULT_DOT_PALETTE.length];
+                    return (
+                      <NailResultCard
+                        key={`${item.finger}-${idx}`}
+                        fingerLabel={item.finger}
+                        dotColor={dotColor}
+                        primaryText="Unavailable"
+                        primaryTone="unavailable"
+                        measuredWidthMm={item.width_mm}
+                        subLabel="Width chart not provided"
+                      />
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Actual Published #0–#9 Tip Lengths for Selected Shape */}
+              <div className="space-y-2.5 pt-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
+                  <span className="font-semibold text-foreground">
+                    Published {lengthOnlyMatch.selectedShape} Vertical Tip Lengths (#0–#9)
+                  </span>
+                  <span>Cuticle base to tip (mm)</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  {lengthOnlyMatch.shapeLengths.map((row) => (
+                    <div
+                      key={row.size}
+                      className="rounded-xl border border-lavender/60 bg-lavender/15 px-3 py-2.5 text-center"
                     >
-                      {s}
-                    </button>
+                      <span className="text-xs font-bold text-primary block">Tip {row.size}</span>
+                      <span className="font-mono text-sm font-bold text-foreground">
+                        {row.length_mm} mm L
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
+            </div>
+          )}
 
-              {/* Finger-wise Comparison Table */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
-                  <span className="font-semibold text-foreground">
-                    Finger-Wise Comparison (Preset {activePresetComparison.setKey})
-                  </span>
-                  <span>Unit: mm</span>
-                </div>
-
-                <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-                  <table className="w-full text-left text-xs sm:text-sm">
-                    <thead>
-                      <tr className="border-b border-border/80 bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
-                        <th className="py-3 px-4">Finger</th>
-                        <th className="py-3 px-3">Your Measured Width</th>
-                        <th className="py-3 px-3">Preset {activePresetComparison.setKey} Spec</th>
-                        <th className="py-3 px-3">Fit Deviation</th>
-                        <th className="py-3 px-4">Fit Analysis</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40 font-mono">
-                      {activePresetComparison.items.map((c) => (
-                        <tr key={c.finger} className="hover:bg-muted/20 transition-colors">
-                          <td className="py-3.5 px-4 font-bold font-sans text-foreground">
-                            {c.finger}
-                          </td>
-                          <td className="py-3.5 px-3 font-semibold text-foreground">
-                            {c.measuredWidthMm !== undefined ? `${c.measuredWidthMm.toFixed(2)} mm` : "—"}
-                          </td>
-                          <td className="py-3.5 px-3 text-muted-foreground">
-                            {c.presetWidthMm !== undefined ? `${c.presetWidthMm.toFixed(1)} mm` : "—"}
-                          </td>
-                          <td className="py-3.5 px-3">
-                            {c.diffMm !== undefined ? (
-                              <span
-                                className={`font-semibold ${
-                                  c.isExact
-                                    ? "text-emerald-600 dark:text-emerald-400"
-                                    : Math.abs(c.diffMm) <= 1.0
-                                    ? "text-foreground"
-                                    : "text-amber-600 dark:text-amber-400"
-                                }`}
-                              >
-                                {c.diffMm > 0 ? `+${c.diffMm.toFixed(1)} mm` : `${c.diffMm.toFixed(1)} mm`}
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 font-sans text-xs">
-                            {c.isExact ? (
-                              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
-                                <CheckCircle2 className="size-3.5" /> Exact Fit (≤0.2mm)
-                              </span>
-                            ) : c.diffMm !== undefined && c.diffMm > 0 ? (
-                              <span className="text-muted-foreground">
-                                +{c.diffMm.toFixed(1)}mm roomier
-                              </span>
-                            ) : c.diffMm !== undefined ? (
-                              <span className="text-muted-foreground">
-                                {Math.abs(c.diffMm).toFixed(1)}mm snugger
-                              </span>
-                            ) : (
-                              "Pending Measurement"
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Integrity & Recommendation Disclaimer Box */}
-              <div className="flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-xs text-amber-900 dark:text-amber-300">
-                <Info className="size-4 shrink-0 mt-0.5 text-amber-600" />
+          {/* Fallback when a brand chart exists with an empty/unsupported width dataset */}
+          {chart &&
+            !numberedMatch &&
+            !widthRangeMatch &&
+            !presetMatch &&
+            !shapeMatch &&
+            !lengthOnlyMatch && (
+              <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-foreground">
+                <AlertCircle className="size-4 shrink-0 mt-0.5 text-amber-600" />
                 <div>
-                  <strong>Important Sizing Guidance:</strong> {presetMatch.disclaimer} If your finger measurements span multiple preset sets, consider ordering individual replacement sizes or sizing up for safe filing.
+                  <p className="font-semibold text-amber-900 dark:text-amber-200">
+                    Reliable width-based size matching is unavailable
+                  </p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    This brand chart does not currently publish millimeter width specifications needed to generate size recommendations.
+                  </p>
                 </div>
               </div>
+            )}
+
+          {/* Concise Verification & Source Footer */}
+          {chart?.source_url && (
+            <div className="pt-3 border-t border-lavender/40 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>Chart Unit: Millimeters ({chart.unit || "mm"})</span>
+              <a
+                href={chart.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              >
+                Official Brand Guide <ExternalLink className="size-3" />
+              </a>
             </div>
           )}
-
-          {/* ================================================================= */}
-          {/* FORMAT B: NUMBERED SIZES (e.g. Joyee: #0 to #9)                  */}
-          {/* ================================================================= */}
-          {!isLoadingDetail && chart && numberedMatch && (
-            <div className="space-y-6">
-              {/* Highlight Recommendation Card */}
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 sm:p-6 shadow-xs space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                  Custom Numbered Tip Recommendation
-                </span>
-                <h4 className="font-display text-xl sm:text-2xl font-bold text-foreground">
-                  Your Matched Sizes: {numberedMatch.fingerMatches.map((f) => `#${f.size}`).join(" • ")}
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Individual tip numbers matched by millimeter width. Note: Brand numbering preserves Size 0 as smallest (pinky) and Size 9 as largest (thumb).
-                </p>
-              </div>
-
-              {/* Finger-wise Numbered Match Table */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
-                  <span className="font-semibold text-foreground">
-                    Finger-to-Tip Size Mapping {selectedNumberedSize !== "all" ? `(Filtered: Size #${selectedNumberedSize})` : ""}
-                  </span>
-                  <span>Unit: mm</span>
-                </div>
-
-                <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-                  <table className="w-full text-left text-xs sm:text-sm">
-                    <thead>
-                      <tr className="border-b border-border/80 bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
-                        <th className="py-3 px-4">Finger</th>
-                        <th className="py-3 px-3">Your Measured Width</th>
-                        <th className="py-3 px-3">Matched Size #</th>
-                        <th className="py-3 px-3">Tip Width Spec</th>
-                        <th className="py-3 px-3">Typical Finger</th>
-                        <th className="py-3 px-4">Match Analysis</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40 font-mono">
-                      {displayedNumberedMatches.map((m) => (
-                        <tr key={m.finger} className="hover:bg-muted/20 transition-colors">
-                          <td className="py-3.5 px-4 font-bold font-sans text-foreground">
-                            {m.finger}
-                          </td>
-                          <td className="py-3.5 px-3 font-semibold text-foreground">
-                            {m.measuredWidthMm !== undefined ? `${m.measuredWidthMm.toFixed(2)} mm` : "—"}
-                          </td>
-                          <td className="py-3.5 px-3">
-                            <span className="inline-flex size-7 items-center justify-center rounded-lg bg-secondary text-secondary-foreground text-xs font-bold font-sans">
-                              #{m.size}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-3 font-semibold text-foreground">
-                            {m.matchedWidthDisplay}
-                          </td>
-                          <td className="py-3.5 px-3 font-sans text-xs text-muted-foreground">
-                            {m.typicalFinger || "—"}
-                          </td>
-                          <td className="py-3.5 px-4 font-sans text-xs">
-                            {m.fitStatus === "exact" ? (
-                              <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold">
-                                <CheckCircle2 className="size-3.5" /> Exact Width Match
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 font-medium">
-                                Approximate Match (diff: ±{m.diffMm.toFixed(1)}mm)
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Numbered Sizing Integrity & Disclaimer Box */}
-              <div className="flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-xs text-amber-900 dark:text-amber-300">
-                <Info className="size-4 shrink-0 mt-0.5 text-amber-600" />
-                <div>
-                  <strong>Approximate Match Notice:</strong> {numberedMatch.disclaimer} Measurements with (~) or range spans (e.g. Size 8: 15–16 mm) reflect boutique handmade sizing.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================================================================= */}
-          {/* FORMAT C: SHAPE-BASED RANGES (e.g. Glamnetic: 14 shapes)          */}
-          {/* ================================================================= */}
-          {!isLoadingDetail && chart && shapeMatch && (
-            <div className="space-y-6">
-              {/* Shape Silhouette Specifications Card */}
-              <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5 sm:p-6 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">
-                      Nail Silhouette Bounds
-                    </span>
-                    <h4 className="mt-1 font-display text-xl sm:text-2xl font-bold text-foreground">
-                      Silhouette Shape: {shapeMatch.selectedShape}
-                    </h4>
-                  </div>
-                </div>
-
-                {/* Selected Shape Physical Specifications Banner */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-blue-500/20 text-xs">
-                  <div className="rounded-xl bg-background/80 p-3 border border-border/60">
-                    <span className="text-[11px] text-muted-foreground block">Silhouette Length Span</span>
-                    <span className="font-mono font-bold text-foreground text-sm">{shapeMatch.lengthRangeDisplay}</span>
-                  </div>
-                  <div className="rounded-xl bg-background/80 p-3 border border-border/60">
-                    <span className="text-[11px] text-muted-foreground block">Silhouette Width Span</span>
-                    <span className="font-mono font-bold text-foreground text-sm">{shapeMatch.widthRangeDisplay}</span>
-                  </div>
-                  <div className="rounded-xl bg-background/80 p-3 border border-border/60">
-                    <span className="text-[11px] text-muted-foreground block">Average Thickness</span>
-                    <span className="font-mono font-bold text-foreground text-sm">{shapeMatch.thicknessDisplay}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Finger Widths vs Shape Silhouette Span */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
-                  <span className="font-semibold text-foreground">
-                    Finger Widths vs {shapeMatch.selectedShape} Bounds
-                  </span>
-                  <span>Unit: mm</span>
-                </div>
-
-                <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-                  <table className="w-full text-left text-xs sm:text-sm">
-                    <thead>
-                      <tr className="border-b border-border/80 bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
-                        <th className="py-3 px-4">Finger</th>
-                        <th className="py-3 px-3">Your Measured Width</th>
-                        <th className="py-3 px-3">Silhouette Width Range</th>
-                        <th className="py-3 px-4">Silhouette Span Compatibility</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40 font-mono">
-                      {shapeMatch.fingerComparisons.map((fc) => (
-                        <tr key={fc.finger} className="hover:bg-muted/20 transition-colors">
-                          <td className="py-3.5 px-4 font-bold font-sans text-foreground">
-                            {fc.finger}
-                          </td>
-                          <td className="py-3.5 px-3 font-semibold text-foreground">
-                            {fc.measuredWidthMm !== undefined ? `${fc.measuredWidthMm.toFixed(2)} mm` : "—"}
-                          </td>
-                          <td className="py-3.5 px-3 text-muted-foreground">
-                            {shapeMatch.widthRangeDisplay}
-                          </td>
-                          <td className="py-3.5 px-4 font-sans text-xs">
-                            {fc.isWithinRange ? (
-                              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
-                                <CheckCircle2 className="size-3.5" /> Fits within silhouette width boundaries
-                              </span>
-                            ) : (
-                              <span className="text-amber-700 dark:text-amber-400 font-medium">
-                                {fc.statusText}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Shape Range Integrity Callout */}
-              <div className="flex items-start gap-3 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4 text-xs text-blue-950 dark:text-blue-300">
-                <Info className="size-4 shrink-0 mt-0.5 text-blue-600" />
-                <div>
-                  <strong>Silhouette Dimension Specifications:</strong> {shapeMatch.disclaimer} Measurements describe physical millimeter boundaries for each shape silhouette (from smallest to largest tip in the collection).
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================================================================= */}
-          {/* FORMAT D: WIDTH RANGES (Partner Studios)                          */}
-          {/* ================================================================= */}
-          {!isLoadingDetail && chart && widthRangeMatch && (
-            <div className="space-y-6">
-              <div className="rounded-2xl border border-border bg-muted/30 p-5 space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Range Match Recommendation
-                </span>
-                <h4 className="font-display text-xl font-bold text-foreground">
-                  Overall Fit: {widthRangeMatch.overallSetSize}
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  {widthRangeMatch.ruleExplanation}
-                </p>
-              </div>
-
-              <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-                <table className="w-full text-left text-xs sm:text-sm">
-                  <thead>
-                    <tr className="border-b border-border/80 bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
-                      <th className="py-3 px-4">Finger</th>
-                      <th className="py-3 px-3">Your Measured Width</th>
-                      <th className="py-3 px-3">Brand Range Bracket</th>
-                      <th className="py-3 px-3">Recommended Size</th>
-                      <th className="py-3 px-4">Analysis</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/40 font-mono">
-                    {widthRangeMatch.fingerFits.map((fit) => (
-                      <tr key={fit.finger} className="hover:bg-muted/20 transition-colors">
-                        <td className="py-3.5 px-4 font-bold font-sans text-foreground">
-                          {fit.finger}
-                        </td>
-                        <td className="py-3.5 px-3 font-semibold text-foreground">
-                          {typeof fit.measuredWidthMm === "number" ? `${fit.measuredWidthMm.toFixed(2)} mm` : "—"}
-                        </td>
-                        <td className="py-3.5 px-3 text-muted-foreground">
-                          {fit.chartRange ? `${fit.chartRange.minMm}–${fit.chartRange.maxMm} mm` : "—"}
-                        </td>
-                        <td className="py-3.5 px-3">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-secondary text-secondary-foreground text-xs font-bold px-2 py-0.5 font-sans">
-                            {fit.recommendedSize}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 font-sans text-xs text-muted-foreground">
-                          {fit.explanation}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ================================================================= */}
-          {/* FORMAT E: LENGTH-ONLY NUMBERED (The Nailest)                      */}
-          {/* ================================================================= */}
-          {!isLoadingDetail && chart && lengthOnlyMatch && (
-            <div className="space-y-6">
-              {/* Shape Specifications & Alert Banner */}
-              <div className="rounded-2xl border border-purple-500/30 bg-purple-500/5 p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400">
-                      Shape Length Specification Guide
-                    </span>
-                    <h4 className="font-display text-xl font-bold text-foreground">
-                      {lengthOnlyMatch.selectedShape} Tip Lengths (#0–#9)
-                    </h4>
-                  </div>
-                </div>
-
-                {/* Strict Width Absence Callout as required by prompt */}
-                <div className="flex items-start gap-3 rounded-xl border border-purple-500/20 bg-background/80 p-3.5 text-xs text-foreground">
-                  <AlertCircle className="size-4 shrink-0 mt-0.5 text-purple-600 dark:text-purple-400" />
-                  <div className="space-y-1">
-                    <p className="font-semibold text-purple-900 dark:text-purple-200">
-                      Length information is available, but width measurements are not provided by this brand.
-                    </p>
-                    <p className="text-muted-foreground leading-relaxed">
-                      Exact size matching is currently unavailable because this brand provides only nail tip lengths without width specifications. No size number or fit percentage can be reliably calculated from your natural nail bed widths.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Corresponding #0–#9 Length Chart Table */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
-                  <span className="font-semibold text-foreground">
-                    Vertical Tip Lengths for {lengthOnlyMatch.selectedShape}
-                  </span>
-                  <span>Unit: mm (Cuticle base to tip)</span>
-                </div>
-
-                <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-                  <table className="w-full text-left text-xs sm:text-sm">
-                    <thead>
-                      <tr className="border-b border-border/80 bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
-                        <th className="py-3 px-4">Size Number</th>
-                        <th className="py-3 px-4">Vertical Length (mm)</th>
-                        <th className="py-3 px-4">Width (mm)</th>
-                        <th className="py-3 px-4">Matching Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40 font-mono">
-                      {lengthOnlyMatch.shapeLengths.map((row) => (
-                        <tr key={row.size} className="hover:bg-muted/20 transition-colors">
-                          <td className="py-3.5 px-4 font-bold font-sans text-foreground">
-                            <span className="inline-flex size-7 items-center justify-center rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-300 font-bold text-xs">
-                              {row.size}
-                            </span>
-                            {row.size === "#0" && (
-                              <span className="ml-2 text-[10px] text-muted-foreground font-sans uppercase tracking-wider">
-                                (Longest)
-                              </span>
-                            )}
-                            {row.size === "#9" && (
-                              <span className="ml-2 text-[10px] text-muted-foreground font-sans uppercase tracking-wider">
-                                (Shortest)
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 font-bold text-foreground">
-                            {row.length_mm} mm
-                          </td>
-                          <td className="py-3.5 px-4 font-sans text-xs text-muted-foreground">
-                            Not provided by brand
-                          </td>
-                          <td className="py-3.5 px-4 font-sans text-xs text-muted-foreground">
-                            <span className="inline-flex items-center gap-1 text-muted-foreground/80">
-                              <Info className="size-3.5" />
-                              Width match unavailable
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Numbering Direction & Reference Note */}
-              <div className="flex items-start gap-2.5 rounded-xl border border-border bg-muted/30 p-3.5 text-xs text-muted-foreground">
-                <Info className="size-4 shrink-0 text-lavender-deep mt-0.5" />
-                <div>
-                  <strong className="text-foreground">Brand Numbering Convention:</strong> #0 is the longest nail tip ({lengthOnlyMatch.shapeLengths[0]?.length_mm ?? 23} mm) and #9 is the shortest nail tip ({lengthOnlyMatch.shapeLengths[lengthOnlyMatch.shapeLengths.length - 1]?.length_mm ?? 15} mm). Natural nail bed width matching is omitted to prevent incorrect sizing.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Metadata Footer: Source URL, Verification & Compare Another Brand */}
-          <div className="pt-4 border-t border-border/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="space-y-1 text-xs text-muted-foreground">
-              {chart?.verification_status && (
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-foreground">Verification:</span>
-                  <span className="capitalize">{chart.verification_status.replace("_", " ")}</span>
-                </div>
-              )}
-              {chart?.source_url && (
-                <div className="flex items-center gap-1.5">
-                  <span>Source Guide:</span>
-                  <a
-                    href={chart.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary hover:underline font-mono inline-flex items-center gap-1"
-                  >
-                    View Original Brand Chart <ExternalLink className="size-3" />
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <Button
-              onClick={() => onBrandSelect(null)}
-              variant="outline"
-              size="sm"
-              className="gap-2 text-xs font-semibold shadow-xs"
-            >
-              <ArrowLeftRight className="size-3.5 text-primary" />
-              Compare Another Brand
-            </Button>
-          </div>
         </div>
       )}
     </div>

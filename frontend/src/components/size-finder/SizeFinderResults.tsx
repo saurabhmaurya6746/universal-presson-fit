@@ -1,23 +1,17 @@
-import { useState, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useMemo, useRef } from "react";
 import {
+  AlertTriangle,
+  ArrowLeftRight,
+  Bookmark,
+  Check,
   Clipboard,
   Download,
-  Check,
   Loader2,
   RotateCcw,
-  Cpu,
-  ChevronDown,
-  ChevronUp,
-  AlertTriangle,
   Sparkles,
-  ArrowLeftRight,
-  Eye,
-  Bookmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { downloadSizeCardPdf, generateClipboardSizeText } from "@/services/sizeFinderService";
-import { resolveFingerKey } from "@/services/brandMatchingService";
 import { BrandFitComparison } from "@/components/brand/BrandFitComparison";
 import type { NailSizeResult, FingerSize } from "@/types";
 
@@ -28,22 +22,43 @@ export interface SizeFinderResultsProps {
   onBrandSelect?: (brandId: string | null) => void;
 }
 
+const DEFAULT_DOT_PALETTE = ["#ec4899", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"];
+
+function getNailSortKey(item: FingerSize, fallbackIdx: number): number {
+  if (typeof item.nailIndex === "number") return item.nailIndex;
+  const numMatch = item.finger.match(/nail\s*(\d+)/i);
+  if (numMatch) return parseInt(numMatch[1], 10);
+  const lower = item.finger.toLowerCase();
+  if (lower.includes("thumb")) return 1;
+  if (lower.includes("index")) return 2;
+  if (lower.includes("middle")) return 3;
+  if (lower.includes("ring")) return 4;
+  if (lower.includes("pinky")) return 5;
+  return 100 + fallbackIdx;
+}
+
 export function SizeFinderResults({
   results,
   onReset,
   selectedBrandId,
   onBrandSelect,
 }: SizeFinderResultsProps) {
-  const navigate = useNavigate();
+  const brandSectionRef = useRef<HTMLDivElement | null>(null);
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
-  const [showOverlay, setShowOverlay] = useState(false);
   const [saveNickname, setSaveNickname] = useState("");
   const [isSavedLocally, setIsSavedLocally] = useState(false);
 
+  const detectedNails = useMemo(() => {
+    const rawItems = results.measurements || results.leftHand || results.rightHand || [];
+    return rawItems
+      .map((item, idx) => ({ item, sortKey: getNailSortKey(item, idx), origIdx: idx }))
+      .sort((a, b) => a.sortKey - b.sortKey || a.origIdx - b.origIdx)
+      .map(({ item }) => item);
+  }, [results]);
+
   const handleSaveLocally = () => {
-    const name = saveNickname.trim() || "My Saved Fit";
+    const name = saveNickname.trim() || "My Nail Size Profile";
     try {
       const existing = JSON.parse(
         localStorage.getItem("presson_fit_saved_profiles_demo") || "[]"
@@ -53,6 +68,12 @@ export function SizeFinderResults({
         nickname: name,
         savedAt: new Date().toLocaleDateString(),
         summary: results.summaryProfile,
+        measurements: detectedNails.map((m, idx) => ({
+          finger: m.finger,
+          width_mm: m.width_mm,
+          size: m.recommended_size || m.size,
+          colorHex: m.colorHex || DEFAULT_DOT_PALETTE[idx % DEFAULT_DOT_PALETTE.length],
+        })),
       });
       localStorage.setItem(
         "presson_fit_saved_profiles_demo",
@@ -100,483 +121,226 @@ export function SizeFinderResults({
     }
   };
 
-  const handleBookAppointment = () => {
-    try {
-      sessionStorage.setItem("aura_active_ai_booking", JSON.stringify(results));
-    } catch {
-      // ignore storage error
-    }
-    navigate("/booking", {
-      state: {
-        source: "ai",
-        sizeResult: results,
-      },
-    });
+  const handleCompareAnotherBrand = () => {
+    onBrandSelect?.(null);
+    brandSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => {
+      const dropdown = document.getElementById("brand-select-dropdown") as HTMLSelectElement | null;
+      dropdown?.focus();
+    }, 350);
   };
-
-  // Sort and separate measurements into canonical 5 anatomical fingers and any extra detections
-  const { anatomicalFingers, extraDetections } = useMemo(() => {
-    const rawItems: FingerSize[] = results.measurements || results.leftHand || results.rightHand || [];
-
-    const canonicalOrder = [
-      { key: "thumb", name: "Thumb", defaultIdx: 1 },
-      { key: "index", name: "Index", defaultIdx: 2 },
-      { key: "middle", name: "Middle", defaultIdx: 3 },
-      { key: "ring", name: "Ring", defaultIdx: 4 },
-      { key: "pinky", name: "Pinky", defaultIdx: 5 },
-    ] as const;
-
-    const assignedSlots = new Map<string, FingerSize>();
-    const extras: FingerSize[] = [];
-    const paletteColors = ["#ec4899", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"];
-
-    // First pass: assign to canonical slot by resolved key
-    rawItems.forEach((item) => {
-      const fKey = resolveFingerKey(item.finger);
-      if (fKey && !assignedSlots.has(fKey)) {
-        assignedSlots.set(fKey, item);
-      } else {
-        extras.push(item);
-      }
-    });
-
-    const primaryList = canonicalOrder.map((slot, sIdx) => {
-      const item = assignedSlots.get(slot.key);
-      const color = item?.colorHex || paletteColors[sIdx % paletteColors.length];
-      return {
-        key: slot.key,
-        name: slot.name,
-        item,
-        color,
-      };
-    });
-
-    return {
-      anatomicalFingers: primaryList,
-      extraDetections: extras,
-    };
-  }, [results]);
 
   const hasValidationFailed = Boolean(results.validation && !results.validation.passed);
   const isUncalibrated = !results.coin_detected;
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       {/* ==================================================================== */}
-      {/* SECTION A — RESULTS HEADER                                           */}
+      {/* 1. AI DETECTION VIEW — FULL-WIDTH CARD + COMPACT NAIL MEASUREMENTS    */}
       {/* ==================================================================== */}
-      <div className="rounded-2xl border border-border/80 bg-card p-6 sm:p-8 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              {/* Subtle Success Indicator */}
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
-                <Sparkles className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+      <section className="rounded-3xl border border-lavender/70 bg-card p-5 sm:p-8 shadow-soft space-y-5">
+        {/* Card Header with Status Badge & Top-Right Retake Button */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-mint/50 px-3 py-1 text-xs font-semibold text-foreground border border-lavender/50">
+                <Sparkles className="size-3.5 text-primary" />
                 <span>{results.isDemo ? "Demo Results" : "Analysis Complete"}</span>
               </span>
 
-              {isUncalibrated && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300 border border-amber-500/20">
-                  <AlertTriangle className="size-3 text-amber-600" />
-                  <span>Uncalibrated (₹10 Coin Missing)</span>
+              {results.coin_detected ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-lavender/35 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+                  <span className="size-2 rounded-full bg-blue-600" />
+                  <span>₹10 Coin Calibrated (27.0 mm)</span>
                 </span>
-              )}
-
-              {hasValidationFailed && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-0.5 text-[11px] font-semibold text-destructive border border-destructive/20">
-                  <AlertTriangle className="size-3" />
-                  <span>Quality Warning</span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                  <AlertTriangle className="size-3 text-amber-600" />
+                  <span>₹10 Coin Missing</span>
                 </span>
               )}
             </div>
 
-            <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              Your Nail Measurements
+            <h2 className="font-display text-2xl sm:text-4xl font-bold tracking-tight text-foreground">
+              AI Detection View
             </h2>
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
-              Your hand photo has been analyzed. Here are your estimated natural nail measurements.
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              Detected nail contours, millimeter widths beside each marker, and ₹10 reference coin scale.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onReset}
-              className="gap-1.5 text-xs font-semibold shadow-xs"
-            >
-              <RotateCcw className="size-3.5 text-muted-foreground" />
-              Retake Photo
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* ==================================================================== */}
-      {/* SECTION B — MEASUREMENT RESULTS                                      */}
-      {/* ==================================================================== */}
-      <div className="rounded-2xl border border-border/80 bg-card p-6 sm:p-8 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-border/60">
-          <div>
-            <h3 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-              Natural Nail Dimensions
-            </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Calibrated natural nail widths in millimeters for each hand finger
-            </p>
-          </div>
-
-          {results.processed_image_url && (
-            <button
-              type="button"
-              onClick={() => setShowOverlay(!showOverlay)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors cursor-pointer self-start sm:self-auto"
-            >
-              <Eye className="size-3.5" />
-              <span>{showOverlay ? "Hide Hand Photo Overlay" : "View Hand Photo Overlay"}</span>
-              {showOverlay ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-            </button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onReset}
+            className="gap-1.5 rounded-full px-4 text-xs font-semibold border-lavender-deep/35 bg-background hover:bg-lavender/20 shrink-0 shadow-xs"
+          >
+            <RotateCcw className="size-3.5 text-primary" />
+            Retake
+          </Button>
         </div>
 
-        {/* Validation Error Banner if photo quality check failed */}
+        {/* Photo Quality / Coin Alerts */}
         {hasValidationFailed && (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-xs text-destructive text-left space-y-2">
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-xs text-destructive space-y-1">
             <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider">
               <AlertTriangle className="size-4 shrink-0" />
-              <span>Photo Quality Verification Alert</span>
+              <span>Photo Quality Alert</span>
             </div>
-            <p className="text-xs leading-relaxed font-semibold">
+            <p className="font-semibold">
               {results.validation?.primaryError || "Photo does not meet precision measurement criteria."}
             </p>
-            <p className="text-[11px] text-muted-foreground">
-              Measurements are estimated; brand-matching recommendations may be limited. You can retake the photo under even lighting.
-            </p>
           </div>
         )}
 
-        {/* Uncalibrated Banner if coin missing */}
         {isUncalibrated && !hasValidationFailed && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200">
-            <div className="flex items-center gap-1.5 font-semibold">
-              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
-              <span>₹10 Reference Coin Missing</span>
-            </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+            <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-600" />
+            <p className="leading-relaxed">
               {results.calibration_message ||
-                "Without a verified ₹10 coin on the same surface, millimeter measurements are approximate optical estimates."}
+                "₹10 reference coin was not detected. Millimeter scale calibration requires a visible ₹10 coin beside your hand."}
             </p>
           </div>
         )}
 
-        {/* Responsive Grid of Canonical 5 Hand Fingers */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-          {anatomicalFingers.map((slot) => {
-            const item = slot.item;
-            const hasWidth = typeof item?.width_mm === "number";
+        {/* Processed Hand Image with Overlays, Masks & ₹10 Reference Coin */}
+        {results.processed_image_url ? (
+          <div className="flex items-center justify-center overflow-hidden rounded-2xl border border-border/70 bg-blush/15 p-3 sm:p-5">
+            <img
+              src={results.processed_image_url}
+              alt="AI Detection View with segmented nail boundaries, millimeter measurements, and ₹10 coin"
+              className="max-h-[460px] w-auto max-w-full rounded-xl object-contain shadow-soft"
+            />
+          </div>
+        ) : (
+          <div className="flex min-h-48 items-center justify-center rounded-2xl border border-dashed border-lavender/70 bg-blush/10 p-6 text-center text-xs text-muted-foreground">
+            Processed detection preview unavailable for this result.
+          </div>
+        )}
 
-            return (
-              <div
-                key={slot.key}
-                className="relative flex flex-col justify-between rounded-xl border border-border/80 bg-background/80 p-4 transition-all hover:border-border hover:shadow-xs"
-              >
-                <div>
-                  {/* Finger Header with overlay color dot */}
-                  <div className="flex items-center justify-between gap-1.5 mb-2">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="size-3 rounded-full shrink-0 shadow-xs"
-                        style={{ backgroundColor: slot.color }}
-                        title={`${slot.name} detection overlay color`}
-                      />
-                      <span className="font-display text-sm font-bold text-foreground">
-                        {slot.name}
-                      </span>
-                    </div>
-                    {item && item.finger !== slot.name && (
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        {item.finger.replace("Nail ", "N")}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Measured Width in Millimeters */}
-                  <div className="my-2">
-                    {hasWidth ? (
-                      <div className="flex items-baseline gap-1">
-                        <span className="font-mono text-2xl font-bold tracking-tight text-foreground">
-                          {item!.width_mm!.toFixed(1)}
-                        </span>
-                        <span className="font-mono text-xs font-semibold text-muted-foreground">
-                          mm
-                        </span>
-                      </div>
-                    ) : item ? (
-                      <span className="text-xs text-amber-700 dark:text-amber-400 font-medium block">
-                        Uncalibrated
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground block">
-                        Not in frame
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Secondary Status & Dimensions */}
-                <div className="pt-2 border-t border-border/50 text-[11px] text-muted-foreground space-y-0.5">
-                  {typeof item?.height_mm === "number" && (
-                    <div className="font-mono text-[10px]">
-                      {item.height_mm.toFixed(1)} mm length
-                    </div>
-                  )}
-                  {item?.recommended_size && item.recommended_size !== "Pending Calibration" && (
-                    <div className="font-medium text-foreground text-[10px] truncate">
-                      {item.recommended_size.replace("Validation Failed", "Withheld")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Extra Detections Handling (>5 nails detected) */}
-        {extraDetections.length > 0 && (
-          <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-foreground block">
-                  Additional Detected Boundaries ({extraDetections.length})
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  Additional detections from the image preserved without altering standard 5-finger anatomical mapping.
-                </span>
-              </div>
+        {/* Compact Actual Nail Measurements Strip Below Image (Dynamic Count) */}
+        <div className="space-y-3 pt-1">
+          {detectedNails.length === 0 ? (
+            <div className="rounded-2xl border border-lavender/50 bg-blush/15 p-4 text-center text-xs text-muted-foreground">
+              No nail boundaries detected in this photo. Click <strong>Retake</strong> above to capture a clearer overhead hand photo.
             </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
+              {detectedNails.map((nail, idx) => {
+                const dotColor =
+                  nail.colorHex || DEFAULT_DOT_PALETTE[idx % DEFAULT_DOT_PALETTE.length];
+                const hasWidth = typeof nail.width_mm === "number" && nail.width_mm > 0;
 
-            <div className="flex flex-wrap gap-2.5">
-              {extraDetections.map((extra, eIdx) => (
-                <div
-                  key={extra.finger || eIdx}
-                  className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono space-y-0.5 shadow-xs"
-                >
-                  <div className="flex items-center gap-1.5 font-bold text-foreground">
+                return (
+                  <div
+                    key={`${nail.finger}-${idx}`}
+                    className="inline-flex items-center gap-2 rounded-full border border-lavender/70 bg-gradient-to-r from-blush/25 to-lavender/25 px-4 py-2 text-xs sm:text-sm shadow-xs"
+                  >
                     <span
-                      className="size-2 rounded-full"
-                      style={{ backgroundColor: extra.colorHex || "#a855f7" }}
+                      className="size-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: dotColor }}
                     />
-                    <span>{extra.finger || `Detection #${eIdx + 6}`}</span>
+                    <span className="font-semibold text-foreground">{nail.finger}</span>
+                    <span className="text-muted-foreground">—</span>
+                    <span className="font-mono font-bold text-primary">
+                      {hasWidth ? `${nail.width_mm!.toFixed(2)} mm` : "Uncalibrated"}
+                    </span>
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Width: {typeof extra.width_mm === "number" ? `${extra.width_mm.toFixed(1)} mm` : "—"}
-                    {extra.confidence && ` · ${(extra.confidence * 100).toFixed(0)}% conf`}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Required Small Note */}
-        <p className="text-[11px] text-muted-foreground text-center sm:text-left italic">
-          Measurements are optical estimates and may vary slightly depending on photo conditions.
-        </p>
-
-        {/* Collapsible AI Detection View with ₹10 Coin & Legend */}
-        {showOverlay && results.processed_image_url && (
-          <div className="pt-4 border-t border-border/60 space-y-4 animate-in fade-in duration-300">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">AI Vision Contour Verification</span>
-              <span>₹10 reference scale & segmented boundaries</span>
-            </div>
-
-            <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-xl bg-muted/30 p-3 border border-border/60">
-              <img
-                src={results.processed_image_url}
-                alt="AI Detection Overlay with ₹10 Coin"
-                className="max-h-80 w-auto rounded-lg object-contain shadow-xs"
-              />
-            </div>
-
-            {/* Color-Coded Nail Legend matching the Detection Overlay */}
-            <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-muted-foreground pt-1">
-              <span className="flex items-center gap-1.5 font-medium">
-                <span className="inline-block size-3 rounded-full bg-blue-600"></span>
-                ₹10 Reference Coin
-              </span>
-              {anatomicalFingers.map((slot) => (
-                <span key={slot.key} className="flex items-center gap-1.5 font-medium text-foreground">
-                  <span
-                    className="inline-block size-3 rounded-full"
-                    style={{ backgroundColor: slot.color }}
-                  ></span>
-                  {slot.name}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+          <p className="text-center text-[11px] text-muted-foreground">
+            Showing {detectedNails.length} detected nail{detectedNails.length === 1 ? "" : "s"} · Optical millimeter estimates may vary slightly with camera angle and lighting.
+          </p>
+        </div>
+      </section>
 
       {/* ==================================================================== */}
-      {/* SECTION C & SECTION D — BRAND SELECTION & BRAND SIZING RESULTS        */}
+      {/* 2 & 3. SELECT BRAND + CONDITIONAL SHAPE DROPDOWNS & BRAND RESULTS     */}
       {/* ==================================================================== */}
       <BrandFitComparison
         results={results}
         selectedBrandId={selectedBrandId}
         onBrandSelect={onBrandSelect || (() => {})}
+        sectionRef={brandSectionRef}
       />
 
       {/* ==================================================================== */}
-      {/* SECTION E — ACTIONS                                                  */}
+      {/* 4. ACTIONS — DOWNLOAD SIZE CARD, COMPARE ANOTHER BRAND, SAVE PROFILE */}
       {/* ==================================================================== */}
-      <div className="rounded-2xl border border-border/80 bg-card p-6 sm:p-8 shadow-xs space-y-6">
-        <div className="pb-4 border-b border-border/60">
-          <h3 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-            Size Profile & Actions
-          </h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Universal millimeter profile: {results.summaryProfile}
-          </p>
+      <section className="rounded-3xl border border-lavender/70 bg-gradient-to-br from-card via-card to-lavender/20 p-5 sm:p-8 shadow-soft space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-lavender/50">
+          <div>
+            <h3 className="font-display text-2xl font-bold text-foreground">
+              Save or Export Your Size Card
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Download your calibrated millimeter card, test another brand, or save locally in this browser.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleCopy}
+            className="gap-1.5 rounded-full text-xs font-semibold text-primary hover:bg-lavender/30 self-start sm:self-auto"
+          >
+            {copied ? <Check className="size-3.5 text-emerald-600" /> : <Clipboard className="size-3.5" />}
+            {copied ? "Copied!" : "Copy Measurements"}
+          </Button>
         </div>
 
-        {/* Primary Action Buttons */}
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="outline" size="sm" onClick={handleCopy} className="gap-2 text-xs font-semibold shadow-xs">
-            {copied ? <Check className="size-3.5 text-emerald-600" /> : <Clipboard className="size-3.5" />}
-            {copied ? "Sizes Copied!" : "Copy My Sizes"}
-          </Button>
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3">
+            <Button
+              size="default"
+              onClick={handleDownload}
+              disabled={downloading}
+              className="gap-2 font-semibold"
+            >
+              {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              {downloading ? "Generating PDF..." : "Download Size Card"}
+            </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDownload}
-            disabled={downloading}
-            className="gap-2 text-xs font-semibold shadow-xs"
-          >
-            {downloading ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-            {downloading ? "Generating PDF..." : "Download Size Card"}
-          </Button>
-
-          <Button variant="outline" size="sm" onClick={onReset} className="gap-2 text-xs font-semibold shadow-xs">
-            <RotateCcw className="size-3.5 text-muted-foreground" />
-            Retake Photo
-          </Button>
-
-          {selectedBrandId && onBrandSelect && (
             <Button
               variant="outline"
-              size="sm"
-              onClick={() => onBrandSelect(null)}
-              className="gap-2 text-xs font-semibold shadow-xs text-primary hover:text-primary"
+              size="default"
+              onClick={handleCompareAnotherBrand}
+              className="gap-2 font-semibold border-lavender-deep/40 bg-background hover:bg-lavender/20"
             >
-              <ArrowLeftRight className="size-3.5" />
+              <ArrowLeftRight className="size-4 text-primary" />
               Compare Another Brand
             </Button>
-          )}
-
-          <Button asChild size="sm" variant="ghost" className="text-xs text-muted-foreground hover:text-foreground">
-            <Link to="/brands">Browse All Brand Charts</Link>
-          </Button>
-
-          <Button size="sm" variant="ghost" onClick={handleBookAppointment} className="text-xs text-muted-foreground hover:text-foreground">
-            Book Custom Set
-          </Button>
-        </div>
-
-        {/* Local Profile Save (Demo / Local Storage) */}
-        <div className="pt-4 border-t border-border/60">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Bookmark className="size-3.5 text-primary" />
-                Save Size Profile (Local Storage)
-              </span>
-              <span className="text-[11px] text-muted-foreground block mt-0.5">
-                Demo Mode: Saved directly in this browser for quick reference.
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <input
-                type="text"
-                placeholder="Profile nickname (e.g. My Nails)"
-                value={saveNickname}
-                onChange={(e) => setSaveNickname(e.target.value)}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary w-full sm:w-48 shadow-xs"
-              />
-              <Button size="sm" variant="outline" onClick={handleSaveLocally} className="text-xs font-semibold shrink-0 shadow-xs">
-                {isSavedLocally ? "Saved!" : "Save Profile"}
-              </Button>
-            </div>
           </div>
 
-          {isSavedLocally && (
-            <p className="mt-2 text-xs text-emerald-600 font-medium">
-              Profile saved locally to this browser!
-            </p>
-          )}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+            <input
+              type="text"
+              aria-label="Profile nickname"
+              placeholder="Profile name (optional)"
+              value={saveNickname}
+              onChange={(e) => setSaveNickname(e.target.value)}
+              className="rounded-full border border-lavender-deep/35 bg-background px-4 py-2.5 text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 sm:w-44 shadow-xs"
+            />
+            <Button
+              variant="blush"
+              size="default"
+              onClick={handleSaveLocally}
+              className="gap-2 font-semibold border border-blush shrink-0"
+            >
+              {isSavedLocally ? <Check className="size-4 text-emerald-700" /> : <Bookmark className="size-4 text-primary" />}
+              {isSavedLocally ? "Saved!" : "Save Size Profile"}
+            </Button>
+          </div>
         </div>
-      </div>
 
-      {/* Development AI Diagnostics Panel */}
-      {results.debugInfo && (
-        <div className="text-center pt-2">
-          <button
-            type="button"
-            onClick={() => setShowDebug(!showDebug)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-          >
-            <Cpu className="size-3.5" />
-            <span>{showDebug ? "Hide AI Diagnostics" : "Show AI Diagnostics (WASM / ONNX)"}</span>
-            {showDebug ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-          </button>
-
-          {showDebug && (
-            <div className="mt-4 rounded-2xl border border-border bg-card/90 p-5 text-left text-xs font-mono shadow-xs space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Model File</span>
-                  <span className="font-bold text-foreground">{results.debugInfo.modelName}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Execution Provider</span>
-                  <span className="font-bold text-emerald-600">{results.debugInfo.executionProvider}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Detections</span>
-                  <span className="font-bold text-foreground">{results.debugInfo.numDetections} nails</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Preprocess Latency</span>
-                  <span className="text-foreground">{results.debugInfo.preprocessTimeMs} ms</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">ONNX Inference Latency</span>
-                  <span className="font-bold text-foreground">{results.debugInfo.inferenceTimeMs} ms</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Total Client Latency</span>
-                  <span className="font-bold text-emerald-600">{results.debugInfo.totalTimeMs} ms</span>
-                </div>
-              </div>
-
-              {/* Coin Calibration Summary in Debug */}
-              <div className="pt-3 border-t border-border/60 flex items-center justify-between text-[11px]">
-                <span>
-                  Coin Scale: {results.coin_detected ? "Verified ₹10 Coin (27.0mm)" : "Not detected"}
-                </span>
-                {results.calibration?.pixelsPerMm && (
-                  <span className="font-bold text-foreground">
-                    {results.calibration.pixelsPerMm.toFixed(2)} px/mm
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        {isSavedLocally && (
+          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            Size profile saved locally to this browser for quick reference.
+          </p>
+        )}
+      </section>
 
       {/* Floating Clipboard Notification */}
       {copied && (

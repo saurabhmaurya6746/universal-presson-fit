@@ -118,25 +118,27 @@ export function AISizeFinder() {
         Upload an overhead photo of your hand with a ₹10 coin. Get calibrated millimeter widths and find your exact size for any press-on nail brand. No login required.
       </PageIntro>
 
-      <section className="section-shell py-14">
+      <section className="section-shell py-10 sm:py-14">
         <div className="mx-auto max-w-5xl">
-          {/* How Sizing Works Educational Banner */}
-          <div className="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl bg-card border border-border/80 p-4 text-xs shadow-xs">
-            <div className="flex items-center gap-2.5">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-lavender/60 text-lavender-deep">
-                <HelpCircle className="size-4" />
-              </span>
-              <span className="text-muted-foreground">
-                <strong className="text-foreground">How it works:</strong> ₹10 reference coin calibrates true millimeter scale; AI measures natural nail widths; compare with any brand chart.
-              </span>
+          {/* How Sizing Works Educational Banner (shown on upload/analyzing screens) */}
+          {stage !== "results" && (
+            <div className="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl bg-card border border-border/80 p-4 text-xs shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-lavender/60 text-lavender-deep">
+                  <HelpCircle className="size-4" />
+                </span>
+                <span className="text-muted-foreground">
+                  <strong className="text-foreground">How it works:</strong> ₹10 reference coin calibrates true millimeter scale; AI measures natural nail widths; compare with any brand chart.
+                </span>
+              </div>
+              <Link
+                to="/how-sizing-works"
+                className="inline-flex shrink-0 items-center gap-1 font-semibold text-lavender-deep hover:underline ml-9 sm:ml-0"
+              >
+                How sizing works & fit tips →
+              </Link>
             </div>
-            <Link
-              to="/how-sizing-works"
-              className="inline-flex shrink-0 items-center gap-1 font-semibold text-lavender-deep hover:underline ml-9 sm:ml-0"
-            >
-              How sizing works & fit tips →
-            </Link>
-          </div>
+          )}
 
           {stage === "upload" && (
             <>
