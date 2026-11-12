@@ -4,6 +4,10 @@ import type {
   NailDetection,
   HandLandmarkData,
 } from "../types";
+import {
+  refineCoinOuterBoundary,
+  type WorkImageBuffers,
+} from "./coinBoundaryRefiner";
 
 /**
  * Physical diameter of standard Indian ₹10 coin: 27.00 mm
@@ -13,7 +17,7 @@ export const REFERENCE_COIN_DIAMETER_MM = 27.0;
 
 const MAX_PROCESSING_DIM = 1280;
 const OPENCV_SCRIPT_SRC = "/opencv/opencv.js";
-const OPENCV_TIMEOUT_MS = 15_000;
+const OPENCV_TIMEOUT_MS = 45_000;
 const OPENCV_POLL_INTERVAL_MS = 50;
 
 let openCvModulePromise: Promise<any> | null = null;
@@ -27,6 +31,7 @@ type ScaledCandidate = {
   center: [number, number];
   radius: number;
   diameterPx: number;
+  perspectiveNote?: string | null;
 };
 
 /**
@@ -210,11 +215,9 @@ export class CoinCalibrationEngine {
     const workW = Math.max(1, Math.round(origW * resizeScale));
     const workH = Math.max(1, Math.round(origH * resizeScale));
 
-    // Rounding can make the effective X/Y scales differ slightly. Keep
-    // independent coordinate factors for positions, and their mean for radii.
+    // Rounding can make the effective X/Y scales differ slightly; keep exact per-axis factors.
     const scaleX = origW / workW;
     const scaleY = origH / workH;
-    const scaleRadius = (scaleX + scaleY) / 2;
 
     const matsToDispose: any[] = [];
     const registerMat = (mat: any) => {
@@ -247,57 +250,74 @@ export class CoinCalibrationEngine {
       const blurred = registerMat(new cv.Mat());
       cv.GaussianBlur(gray, blurred, new cv.Size(9, 9), 2, 2, cv.BORDER_DEFAULT);
 
+      // Equalize after denoising so uniform background grain is not amplified into spurious Canny edges
       const equalized = registerMat(new cv.Mat());
-      cv.equalizeHist(gray, equalized);
+      cv.equalizeHist(blurred, equalized);
 
       const eqBlurred = registerMat(new cv.Mat());
       cv.GaussianBlur(
         equalized,
         eqBlurred,
-        new cv.Size(9, 9),
-        2,
-        2,
+        new cv.Size(5, 5),
+        1.2,
+        1.2,
         cv.BORDER_DEFAULT
       );
 
       const lab = registerMat(new cv.Mat());
       cv.cvtColor(bgr, lab, cv.COLOR_BGR2Lab);
 
+      // Light 3x3 smoothing suppresses single-pixel sensor noise without blunting the outer rim
+      const graySmooth = registerMat(new cv.Mat());
+      cv.GaussianBlur(gray, graySmooth, new cv.Size(3, 3), 0.65, 0.65, cv.BORDER_DEFAULT);
+
       const sobelX = registerMat(new cv.Mat());
       const sobelY = registerMat(new cv.Mat());
-      cv.Sobel(gray, sobelX, cv.CV_64F, 1, 0, 3, 1, 0, cv.BORDER_DEFAULT);
-      cv.Sobel(gray, sobelY, cv.CV_64F, 0, 1, 3, 1, 0, cv.BORDER_DEFAULT);
+      cv.Sobel(graySmooth, sobelX, cv.CV_64F, 1, 0, 3, 1, 0, cv.BORDER_DEFAULT);
+      cv.Sobel(graySmooth, sobelY, cv.CV_64F, 0, 1, 3, 1, 0, cv.BORDER_DEFAULT);
 
       const numPixels = workH * workW;
       const sxData = sobelX.data64F;
       const syData = sobelY.data64F;
+      const gxData = new Float32Array(numPixels);
+      const gyData = new Float32Array(numPixels);
       const gradMag = new Float32Array(numPixels);
 
       for (let i = 0; i < numPixels; i++) {
         const gx = sxData[i];
         const gy = syData[i];
+        gxData[i] = gx;
+        gyData[i] = gy;
         gradMag[i] = Math.hypot(gx, gy);
       }
+
+      const workBuffers: WorkImageBuffers = {
+        width: workW,
+        height: workH,
+        grayData: gray.data as Uint8Array,
+        gxData,
+        gyData,
+        gradMag,
+        labData: lab.data as Uint8Array,
+        bgrData: bgr.data as Uint8Array,
+      };
 
       const minDim = Math.min(workH, workW);
       const minRadius = Math.max(16, Math.floor(minDim * 0.025));
       const maxRadius = Math.min(145, Math.floor(minDim * 0.18));
 
       const searchPasses = [
-        { name: "standard", mat: blurred, param1: 100, param2: 25, minConf: 0.65 },
-        { name: "contrast_boost", mat: eqBlurred, param1: 90, param2: 22, minConf: 0.62 },
-        { name: "sensitive", mat: eqBlurred, param1: 85, param2: 18, minConf: 0.58 },
+        { name: "standard", mat: blurred, dp: 1.2, param1: 100, param2: 25, minConf: 0.65 },
+        { name: "contrast_boost", mat: eqBlurred, dp: 1.25, param1: 90, param2: 22, minConf: 0.62 },
+        { name: "sensitive", mat: eqBlurred, dp: 1.4, param1: 85, param2: 18, minConf: 0.58 },
       ];
 
       const circles = registerMat(new cv.Mat());
-      const maskInner = registerMat(new cv.Mat());
-      const maskOuter = registerMat(new cv.Mat());
-      const maskSurround = registerMat(new cv.Mat());
-      const sectorMask = registerMat(new cv.Mat());
 
       let bestCandidate:
         | (ScaledCandidate & { confidence: number })
         | null = null;
+      let bestRawConfidence = 0;
 
       const scaledNails = nailDetections.map((detection) => ({
         x: detection.geometry.centerX / scaleX,
@@ -339,12 +359,26 @@ export class CoinCalibrationEngine {
         };
       }
 
-      const toOriginalCandidate = (x: number, y: number, r: number): ScaledCandidate => {
-        const originalRadius = Math.round(r * scaleRadius);
+      const toOriginalCandidate = (
+        x: number,
+        y: number,
+        r: number,
+        angleRad = 0,
+        perspectiveNote?: string | null
+      ): ScaledCandidate => {
+        // Directional scale conversion along major axis preserves exact aspect scaling
+        const effScale = Math.hypot(
+          Math.cos(angleRad) * scaleX,
+          Math.sin(angleRad) * scaleY
+        );
+        const origCx = Number((x * scaleX).toFixed(2));
+        const origCy = Number((y * scaleY).toFixed(2));
+        const origRadius = Number((r * effScale).toFixed(2));
         return {
-          center: [Math.round(x * scaleX), Math.round(y * scaleY)],
-          radius: originalRadius,
-          diameterPx: originalRadius * 2,
+          center: [origCx, origCy],
+          radius: origRadius,
+          diameterPx: Number((origRadius * 2).toFixed(2)),
+          perspectiveNote,
         };
       };
 
@@ -369,13 +403,17 @@ export class CoinCalibrationEngine {
         };
       };
 
+      const evaluatedKeys: Array<{ x: number; y: number; r: number }> = [];
+      const evaluatedSeeds: Array<{ x: number; y: number; r: number }> = [];
+      const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
       for (const pass of searchPasses) {
         circles.create(0, 0, cv.CV_32FC3);
         cv.HoughCircles(
           pass.mat,
           circles,
           cv.HOUGH_GRADIENT,
-          1.2,
+          pass.dp,
           35,
           pass.param1,
           pass.param2,
@@ -386,20 +424,22 @@ export class CoinCalibrationEngine {
         if (!circles.cols) continue;
 
         const raw: Array<[number, number, number]> = [];
-        for (let i = 0; i < circles.cols; i++) {
+        const rawScanLimit = Math.min(circles.cols, 120);
+        for (let i = 0; i < rawScanLimit; i++) {
+          // Preserve floating-point Hough proposals instead of quantizing early
           raw.push([
-            Math.round(circles.data32F[i * 3]),
-            Math.round(circles.data32F[i * 3 + 1]),
-            Math.round(circles.data32F[i * 3 + 2]),
+            circles.data32F[i * 3],
+            circles.data32F[i * 3 + 1],
+            circles.data32F[i * 3 + 2],
           ]);
         }
 
         const candidates: Array<[number, number, number]> = [];
         for (const candidate of raw) {
-          if (candidates.length >= 45) break;
+          if (candidates.length >= 18) break;
 
           const [x, y, r] = candidate;
-          const duplicate = candidates.some(([otherX, otherY, otherR]) => {
+          const duplicateInPass = candidates.some(([otherX, otherY, otherR]) => {
             const distance = Math.hypot(x - otherX, y - otherY);
             const maxCandidateRadius = Math.max(r, otherR);
             return (
@@ -407,23 +447,32 @@ export class CoinCalibrationEngine {
               Math.abs(r - otherR) < maxCandidateRadius * 0.3
             );
           });
+          if (duplicateInPass) continue;
 
-          if (!duplicate) candidates.push(candidate);
+          const duplicateAcrossPass = evaluatedSeeds.some(
+            (s) =>
+              Math.hypot(x - s.x, y - s.y) < Math.max(r, s.r) * 0.14 &&
+              Math.abs(r - s.r) < Math.max(r, s.r) * 0.12
+          );
+          if (!duplicateAcrossPass) {
+            candidates.push(candidate);
+          }
         }
 
-        for (const [x, y, r] of candidates) {
+        for (const [houghX, houghY, houghR] of candidates) {
+          evaluatedSeeds.push({ x: houghX, y: houghY, r: houghR });
           if (
-            x - r < 5 ||
-            y - r < 5 ||
-            x + r >= workW - 5 ||
-            y + r >= workH - 5 ||
-            r < minRadius
+            houghX - houghR * 0.5 < 5 ||
+            houghY - houghR * 0.5 < 5 ||
+            houghX + houghR * 0.5 >= workW - 5 ||
+            houghY + houghR * 0.5 >= workH - 5 ||
+            houghR < minRadius * 0.65
           ) {
             debugCandidates.push(
               makeDebugEntry(
-                x,
-                y,
-                r,
+                houghX,
+                houghY,
+                houghR,
                 0,
                 "Candidate touches image boundary or radius is below minimum",
                 "rejected"
@@ -431,6 +480,83 @@ export class CoinCalibrationEngine {
             );
             continue;
           }
+
+          const preOverlapsNail = scaledNails.some(
+            (nail) =>
+              Math.hypot(houghX - nail.x, houghY - nail.y) <
+              houghR * 0.75 + nail.radius
+          );
+
+          if (preOverlapsNail) {
+            debugCandidates.push(
+              makeDebugEntry(
+                houghX,
+                houghY,
+                houghR,
+                0,
+                "Candidate overlaps detected fingernail",
+                "rejected"
+              )
+            );
+            continue;
+          }
+
+          // Reject candidate if its center is located inside the central palm area (prevents knuckle false positives)
+          if (palmBounds) {
+            if (
+              houghX >= palmBounds.minX &&
+              houghX <= palmBounds.maxX &&
+              houghY >= palmBounds.minY &&
+              houghY <= palmBounds.maxY
+            ) {
+              debugCandidates.push(
+                makeDebugEntry(
+                  houghX,
+                  houghY,
+                  houghR,
+                  0,
+                  "Candidate is in the center of hand/palm area",
+                  "rejected"
+                )
+              );
+              continue;
+            }
+          }
+
+          // Refine onto actual outer physical circumference using unblurred grayscale & gradients
+          const refined = refineCoinOuterBoundary(
+            workBuffers,
+            houghX,
+            houghY,
+            houghR,
+            minRadius,
+            maxRadius
+          );
+
+          if (!refined) {
+            debugCandidates.push(
+              makeDebugEntry(
+                houghX,
+                houghY,
+                houghR,
+                0,
+                "Weak or out-of-bounds outer coin boundary after radial refinement",
+                "rejected"
+              )
+            );
+            continue;
+          }
+
+          const { cx: x, cy: y, radius: r, anatomy } = refined;
+
+          // Deduplicate after refinement so inner-seam & outer seeds converging to the same coin evaluate once
+          const alreadyEvaluated = evaluatedKeys.some(
+            (prev) =>
+              Math.hypot(x - prev.x, y - prev.y) < Math.max(r, prev.r) * 0.15 &&
+              Math.abs(r - prev.r) < Math.max(r, prev.r) * 0.08
+          );
+          if (alreadyEvaluated) continue;
+          evaluatedKeys.push({ x, y, r });
 
           const overlapsNail = scaledNails.some(
             (nail) => Math.hypot(x - nail.x, y - nail.y) < r + nail.radius
@@ -450,7 +576,6 @@ export class CoinCalibrationEngine {
             continue;
           }
 
-          // Reject candidate if its center is located inside the central palm area (prevents knuckle false positives)
           if (palmBounds) {
             if (
               x >= palmBounds.minX &&
@@ -472,170 +597,113 @@ export class CoinCalibrationEngine {
             }
           }
 
-          let edgeHits = 0;
-          for (let i = 0; i < 36; i++) {
-            const theta = (2 * Math.PI * i) / 36;
-            const px = Math.max(
-              0,
-              Math.min(workW - 1, Math.floor(x + r * Math.cos(theta)))
-            );
-            const py = Math.max(
-              0,
-              Math.min(workH - 1, Math.floor(y + r * Math.sin(theta)))
-            );
+          // 1. Primary outer-perimeter edge support (35%)
+          const sOuterEdge =
+            0.60 * clamp01(refined.inlierCoverage / 0.80) +
+            0.40 * clamp01(refined.sectorCoverage / 0.92);
 
-            if (gradMag[py * workW + px] > 20) edgeHits++;
-          }
-          const edgeSupport = edgeHits / 36;
+          // 2. Geometric boundary consistency & directional alignment (25%)
+          const normMad = refined.madPx / Math.max(8, r);
+          const normRmse = refined.rmsePx / Math.max(8, r);
+          const sRadiusTight = clamp01(1 - (normMad - 0.006) / 0.032);
+          const sRmseTight = clamp01(1 - (normRmse - 0.010) / 0.042);
+          const sAlign = clamp01((refined.meanInlierAlign - 0.55) / 0.35);
+          const sBoundaryConsistency =
+            0.45 * sRadiusTight + 0.30 * sRmseTight + 0.25 * sAlign;
 
-          maskInner.create(workH, workW, cv.CV_8UC1);
-          maskInner.setTo(new cv.Scalar(0));
-          cv.circle(
-            maskInner,
-            new cv.Point(x, y),
-            Math.floor(0.52 * r),
-            new cv.Scalar(255),
-            -1
-          );
-
-          maskOuter.create(workH, workW, cv.CV_8UC1);
-          maskOuter.setTo(new cv.Scalar(0));
-          cv.circle(
-            maskOuter,
-            new cv.Point(x, y),
-            Math.floor(0.95 * r),
-            new cv.Scalar(255),
-            -1
-          );
-          cv.circle(
-            maskOuter,
-            new cv.Point(x, y),
-            Math.floor(0.70 * r),
-            new cv.Scalar(0),
-            -1
-          );
-
-          maskSurround.create(workH, workW, cv.CV_8UC1);
-          maskSurround.setTo(new cv.Scalar(0));
-          cv.circle(
-            maskSurround,
-            new cv.Point(x, y),
-            Math.floor(1.3 * r),
-            new cv.Scalar(255),
-            -1
-          );
-          cv.circle(
-            maskSurround,
-            new cv.Point(x, y),
-            Math.floor(1.1 * r),
-            new cv.Scalar(0),
-            -1
-          );
-
-          const meanBgrIn = cv.mean(bgr, maskInner);
-          const meanBgrOut = cv.mean(bgr, maskOuter);
-          const meanLabIn = cv.mean(lab, maskInner);
-          const meanLabOut = cv.mean(lab, maskOuter);
-          const meanLabSurround = cv.mean(lab, maskSurround);
-
-          const bIn = meanLabIn[2];
-          const bOut = meanLabOut[2];
-          const bSurround = meanLabSurround[2];
-          const bDiff = bOut - bIn;
-
-          const warmthIn = (meanBgrIn[2] + meanBgrIn[1]) / 2 - meanBgrIn[0];
-          const warmthOut = (meanBgrOut[2] + meanBgrOut[1]) / 2 - meanBgrOut[0];
-          const warmthDiff = warmthOut - warmthIn;
-
-          const sectorBValues: number[] = [];
-          for (let sector = 0; sector < 8; sector++) {
-            sectorMask.create(workH, workW, cv.CV_8UC1);
-            sectorMask.setTo(new cv.Scalar(0));
-            cv.ellipse(
-              sectorMask,
-              new cv.Point(x, y),
-              new cv.Size(Math.floor(0.95 * r), Math.floor(0.95 * r)),
-              0,
-              (360 * sector) / 8,
-              (360 * (sector + 1)) / 8,
-              new cv.Scalar(255),
-              -1
-            );
-            cv.circle(
-              sectorMask,
-              new cv.Point(x, y),
-              Math.floor(0.70 * r),
-              new cv.Scalar(0),
-              -1
-            );
-            sectorBValues.push(cv.mean(lab, sectorMask)[2]);
-          }
-
-          const ringMinB = Math.min(...sectorBValues);
-          const meanSectorB =
-            sectorBValues.reduce((sum, value) => sum + value, 0) /
-            sectorBValues.length;
-          const ringVariance =
-            sectorBValues.reduce(
-              (sum, value) => sum + (value - meanSectorB) ** 2,
-              0
-            ) / sectorBValues.length;
-          const ringStdB = Math.sqrt(ringVariance);
-
-          let seamSum = 0;
-          for (let i = 0; i < 36; i++) {
-            const theta = (2 * Math.PI * i) / 36;
-            const px = Math.max(
-              0,
-              Math.min(
-                workW - 1,
-                Math.floor(x + 0.68 * r * Math.cos(theta))
-              )
-            );
-            const py = Math.max(
-              0,
-              Math.min(
-                workH - 1,
-                Math.floor(y + 0.68 * r * Math.sin(theta))
-              )
-            );
-            seamSum += gradMag[py * workW + px];
-          }
-          const seamEdgeMean = seamSum / 36;
-
+          // 3. Supporting bimetallic contrast (20%)
           const sBimetal =
-            Math.min(1, Math.max(0, bDiff / 18)) * 0.5 +
-            Math.min(1, Math.max(0, warmthDiff / 25)) * 0.5;
-          const sBrass = Math.min(
-            1,
+            clamp01(anatomy.bDiff / 16) * 0.5 +
+            clamp01(anatomy.warmthDiff / 22) * 0.5;
+
+          // 4. Supporting brass outer-ring authenticity & uniformity (12%)
+          const sBrass = clamp01(
             Math.max(
-              0,
-              Math.max((bOut - 128) / 20, (bOut - bSurround) / 10)
+              (anatomy.bOut - 128) / 20,
+              (anatomy.bOut - anatomy.bSurround) / 10
             )
           );
-          const sRingUniform = Math.min(1, Math.max(0, 1 - ringStdB / 12));
-          const sCircle = Math.min(1, edgeSupport / 0.45);
-          const sSeam = Math.min(1, seamEdgeMean / 28);
+          const sRingUniform = clamp01(1 - anatomy.ringStdB / 13);
+          const sBrassRing = 0.65 * sBrass + 0.35 * sRingUniform;
 
-          const confidence =
-            0.35 * sBimetal +
-            0.25 * sBrass +
-            0.15 * sRingUniform +
-            0.15 * sCircle +
-            0.1 * sSeam;
+          // 5. Supporting inner bimetallic seam evidence (8%)
+          const sSeam = clamp01(anatomy.seamEdgeMean / 24);
+
+          const rawConfidence =
+            0.35 * sOuterEdge +
+            0.25 * sBoundaryConsistency +
+            0.20 * sBimetal +
+            0.12 * sBrassRing +
+            0.08 * sSeam;
+
+          // Perspective distortion evaluation
+          let perspectiveFactor = 1.0;
+          let perspectiveCap = 1.0;
+          let perspectiveNote: string | null = null;
+          if (refined.isElliptical) {
+            if (refined.axisRatio < 0.84) {
+              perspectiveFactor = 0.45;
+              perspectiveCap = 0.49;
+              perspectiveNote = `severe tilt ~${Math.round(
+                refined.tiltDegrees
+              )}° (ratio ${refined.axisRatio.toFixed(2)})`;
+            } else if (refined.axisRatio < 0.90) {
+              perspectiveFactor = 0.72;
+              perspectiveCap = 0.67;
+              perspectiveNote = `tilted ~${Math.round(
+                refined.tiltDegrees
+              )}° (ratio ${refined.axisRatio.toFixed(
+                2
+              )}), major-axis corrected — reduced planar reliability`;
+            } else {
+              perspectiveFactor = clamp01(
+                0.84 + ((refined.axisRatio - 0.90) / 0.065) * 0.13
+              );
+              perspectiveNote = `tilted ~${Math.round(
+                refined.tiltDegrees
+              )}° (ratio ${refined.axisRatio.toFixed(
+                2
+              )}), ellipse major-axis corrected`;
+            }
+          }
+
+          const confidence = Math.min(perspectiveCap, rawConfidence * perspectiveFactor);
 
           const reasons: string[] = [];
-          if (edgeSupport < 0.28) reasons.push("Weak perimeter circular edge");
-          if (bDiff < 6 && warmthDiff < 10) {
+          if (
+            refined.inlierCoverage < 0.52 ||
+            refined.sectorCoverage < 0.66 ||
+            refined.maxMissingSectorGap > 3
+          ) {
+            reasons.push("Incomplete or weak outer coin boundary");
+          }
+          if (
+            normMad > 0.038 ||
+            normRmse > 0.050 ||
+            refined.meanInlierGrad < 16
+          ) {
+            reasons.push("Inconsistent or blurry outer coin radius");
+          }
+          if (anatomy.isInnerSeamCandidate) {
+            reasons.push("Detected inner seam inside brass ring rather than outer rim");
+          }
+          if (refined.isElliptical && refined.axisRatio < 0.84) {
+            reasons.push(
+              `Excessive perspective tilt (axis ratio ${refined.axisRatio.toFixed(
+                2
+              )}) prevents reliable planar calibration`
+            );
+          }
+          if (anatomy.bDiff < 5.5 && anatomy.warmthDiff < 9.0) {
             reasons.push("Mono-metallic coin / no bimetallic contrast");
           }
-          if (bOut < 128 && bOut <= bSurround + 3) {
+          if (anatomy.bOut < 126 && anatomy.bOut <= anatomy.bSurround + 2.5) {
             reasons.push("Outer ring is not brass/gold");
           }
-          if (ringMinB < 118) {
+          if (anatomy.ringSecondMinB < 115 || anatomy.ringMinB < 105) {
             reasons.push("Outer ring not complete 360° brass");
           }
-          if (ringStdB > 12) {
+          if (anatomy.ringStdB > 14) {
             reasons.push("Outer ring irregular/non-uniform");
           }
           if (confidence < pass.minConf) {
@@ -643,25 +711,33 @@ export class CoinCalibrationEngine {
           }
 
           const accepted = reasons.length === 0;
-          const originalCandidate = toOriginalCandidate(x, y, r);
+          const originalCandidate = toOriginalCandidate(
+            x,
+            y,
+            r,
+            refined.ellipseAngleRad,
+            perspectiveNote
+          );
 
           debugCandidates.push({
             center: originalCandidate.center,
             radius: originalCandidate.radius,
             diameterPx: originalCandidate.diameterPx,
             confidence: Math.round(confidence * 10_000) / 10_000,
-            edgeSupport: Math.round(edgeSupport * 10_000) / 10_000,
-            bDiff: Math.round(bDiff * 100) / 100,
-            warmthDiff: Math.round(warmthDiff * 100) / 100,
-            outerB: Math.round(bOut * 100) / 100,
-            ringMinB: Math.round(ringMinB * 100) / 100,
-            ringStdB: Math.round(ringStdB * 100) / 100,
-            seamEdgeMean: Math.round(seamEdgeMean * 100) / 100,
+            edgeSupport: Math.round(refined.inlierCoverage * 10_000) / 10_000,
+            bDiff: Math.round(anatomy.bDiff * 100) / 100,
+            warmthDiff: Math.round(anatomy.warmthDiff * 100) / 100,
+            outerB: Math.round(anatomy.bOut * 100) / 100,
+            ringMinB: Math.round(anatomy.ringMinB * 100) / 100,
+            ringStdB: Math.round(anatomy.ringStdB * 100) / 100,
+            seamEdgeMean: Math.round(anatomy.seamEdgeMean * 100) / 100,
             status: accepted ? "selected" : "rejected",
             reason:
               reasons.length > 0
                 ? reasons.join("; ")
-                : `Verified ₹10 bimetallic reference coin (${pass.name})`,
+                : `Verified outer boundary of ₹10 reference coin (${pass.name}${
+                    perspectiveNote ? `; ${perspectiveNote}` : ""
+                  })`,
           });
 
           if (!accepted) continue;
@@ -671,10 +747,13 @@ export class CoinCalibrationEngine {
               ...originalCandidate,
               confidence: Math.round(confidence * 100) / 100,
             };
+            bestRawConfidence = Math.max(bestRawConfidence, rawConfidence);
           }
         }
 
-        if (bestCandidate && bestCandidate.confidence >= 0.7) break;
+        if (bestCandidate && (bestCandidate.confidence >= 0.78 || bestRawConfidence >= 0.85)) {
+          break;
+        }
       }
 
       if (bestCandidate) {
@@ -696,6 +775,9 @@ export class CoinCalibrationEngine {
         const pixelsPerMm = Number(
           (bestCandidate.diameterPx / this.referenceDiameterMm).toFixed(4)
         );
+        const tiltSuffix = bestCandidate.perspectiveNote
+          ? ` — ${bestCandidate.perspectiveNote}`
+          : "";
 
         return {
           detected: true,
@@ -708,7 +790,7 @@ export class CoinCalibrationEngine {
           confidence: bestCandidate.confidence,
           message: `Verified ₹10 coin: ${bestCandidate.diameterPx}px (${pixelsPerMm.toFixed(
             2
-          )} px/mm, conf: ${(bestCandidate.confidence * 100).toFixed(0)}%)`,
+          )} px/mm, conf: ${(bestCandidate.confidence * 100).toFixed(0)}%${tiltSuffix})`,
           candidates: debugCandidates,
         };
       }

@@ -14,6 +14,8 @@ import {
   analyzeNailImage,
   validateNailPhoto,
 } from "@/services/sizeFinderService";
+import { nailInference } from "@/ai/onnx/nailInference";
+import { loadOpenCv } from "@/ai/calibration/coinCalibration";
 import type { NailSizeResult } from "@/types";
 import type { PipelineProgressInfo } from "@/ai/types";
 
@@ -40,6 +42,14 @@ export function AISizeFinder() {
       setSearchParams(nextParams, { replace: true });
     }
   };
+
+  useEffect(() => {
+    // Pre-warm AI Vision Engine while user chooses hand side & photo (deferred 400ms so initial paint is instant)
+    const timer = window.setTimeout(() => {
+      void nailInference.preload().then(() => loadOpenCv().catch(() => undefined));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     return () => {

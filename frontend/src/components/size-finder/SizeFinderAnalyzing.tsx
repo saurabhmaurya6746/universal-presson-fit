@@ -174,10 +174,7 @@ export function SizeFinderAnalyzing({ status, progress }: SizeFinderAnalyzingPro
             {activeTitle}
           </h2>
 
-          <p
-            key={activeDetail}
-            className="mt-1 text-xs text-muted-foreground sm:text-sm animate-in fade-in duration-300"
-          >
+          <p className="mt-1 text-xs text-muted-foreground sm:text-sm tabular-nums">
             {activeDetail}
           </p>
         </div>

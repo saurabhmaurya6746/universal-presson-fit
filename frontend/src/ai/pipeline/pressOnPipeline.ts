@@ -2,7 +2,7 @@ import { nailInference } from "../onnx/nailInference";
 import { renderDetectionsToCanvas } from "../onnx/postprocessing";
 import { handDetector } from "../hand/handDetector";
 import { associateNailsToFingers } from "../finger/fingerAssociation";
-import { coinCalibration } from "../calibration/coinCalibration";
+import { coinCalibration, loadOpenCv } from "../calibration/coinCalibration";
 import { measureAndSizeNails } from "../measurement/nailMeasurement";
 import { validatePhotoQuality } from "../validation/photoValidation";
 import type { PipelineExecutionResult, PipelineProgressInfo } from "../types";
@@ -143,13 +143,23 @@ export class PressOnPipeline {
     // Step 2: AI Vision Engine
     await notify(
       2,
-      35,
+      28,
       "Preparing on-device AI vision engine...",
       "Loading local neural vision model in browser"
     );
-    await nailInference.loadModel((statusText) => {
-      void notify(2, 35, "Preparing on-device AI vision engine...", statusText);
+    await nailInference.loadModel((statusText, stepPct) => {
+      onProgress?.("Preparing on-device AI vision engine...", {
+        step: 2,
+        percent: stepPct ?? 35,
+        title: "Preparing on-device AI vision engine...",
+        detail: statusText,
+        badge: stepBadges[2],
+        completedSteps: [...completedSteps],
+        stepBadges: { ...stepBadges },
+      });
     });
+    // Start warming up OpenCV.js cleanly right after ONNX Vision Engine completes (zero bandwidth contention in Step 2)
+    void loadOpenCv().catch(() => undefined);
     if (!completedSteps.includes(2)) completedSteps.push(2);
     stepBadges[2] = "AI Engine Ready";
     await notify(
